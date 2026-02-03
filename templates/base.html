@@ -23,8 +23,8 @@
         <input type="checkbox" id="ai-toggle" class="toggle-input" checked>
         <span class="toggle-slider"></span>
       </label>
-      <form method="POST" action="{{ url_for('logout') }}" style="display: inline; margin-left: 0.5rem;">
-        <button type="submit" class="btn btn-small" style="background: transparent; color: var(--text-muted); border: 1px solid var(--border);">Logout</button>
+      <form method="POST" action="{{ url_for('logout') }}" style="display: inline;">
+        <button type="submit" class="btn btn-small">Logout</button>
       </form>
     </div>
   </header>
@@ -32,8 +32,8 @@
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
         {% for category, message in messages %}
-          <div class="card" style="background: rgba(63, 185, 80, 0.2); border-color: var(--success); margin-bottom: 1rem;">
-            <p style="color: var(--success); margin: 0;">{{ message }}</p>
+          <div class="card flash-success">
+            <p>{{ message }}</p>
           </div>
         {% endfor %}
       {% endif %}
