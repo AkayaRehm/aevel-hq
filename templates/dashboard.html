@@ -39,7 +39,9 @@
   <h2 class="section-title">Volume & trends</h2>
   <div class="card chart-panel">
     <div class="card-title">Activity over time</div>
-    <canvas id="chart-activity" height="240"></canvas>
+    <div class="chart-wrapper">
+      <canvas id="chart-activity"></canvas>
+    </div>
   </div>
 </section>
 
@@ -112,6 +114,7 @@
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        layout: { padding: { top: 8, right: 8, bottom: 8, left: 8 } },
         plugins: { legend: { labels: { color: '#9CA3AF', font: { size: 12 } } } },
         scales: {
           x: { grid: { color: '#252830' }, ticks: { color: '#6B7280', maxTicksLimit: 7 } },
