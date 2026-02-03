@@ -36,6 +36,11 @@ Production-ready data analytics and marketing automation pipeline. B.L.A.S.T. pr
 3. Add env vars in Dashboard: `GEMINI_API_KEY`, `DATA_SOURCE_PATH` or `DATA_SOURCE_URL`, optional `DELIVERY_WEBHOOK_URL`.
 4. Cron: use Render cron or external scheduler to `POST /trigger` on schedule.
 
+## Admin & email (Zoho Mail)
+
+- **Admin** (`/admin`): Password-protected area to control which emails are sent and to whom. Set `ADMIN_PASSWORD` in `.env` (no default).
+- **Zoho Mail**: Notifications (task assigned, due soon, digest) are sent from `hello.aevel@zohomail.com` (free Zoho). Set `ZOHO_EMAIL` and `ZOHO_PASSWORD` in `.env`. SMTP: `smtp.zoho.com:465` (SSL).
+
 ## Architecture
 
 - **Layer 1** `architecture/`: SOPs (ingestion, analytics, marketing, delivery, error_handling). SOPs updated before code.

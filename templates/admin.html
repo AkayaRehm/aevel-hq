@@ -1,0 +1,90 @@
+{% extends "base_aevel.html" %}
+{% block title %}Admin — Email controls{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>Admin — Email controls</h1>
+  <p class="text-secondary">Control which emails are sent and who receives them. Emails are sent from {{ zoho_email }}.</p>
+  <form method="POST" action="{{ url_for('admin_logout') }}" style="margin-top:0.5rem;">
+    <button type="submit" class="btn btn-secondary">Exit admin</button>
+  </form>
+</div>
+
+<div class="card" style="max-width: 720px;">
+  <h2 style="margin-top:0;">Email types &amp; recipients</h2>
+  <p class="text-secondary">Enable each type and set recipient addresses (comma-separated). Only enabled types with at least one recipient will send.</p>
+  <div id="admin-email-settings"></div>
+  <p id="admin-save-status" class="text-secondary" style="margin-top:1rem;"></p>
+</div>
+{% endblock %}
+{% block scripts %}
+{{ super() }}
+<script>
+(function() {
+  var container = document.getElementById('admin-email-settings');
+  var statusEl = document.getElementById('admin-save-status');
+
+  function load() {
+    fetch('/api/admin/email-settings', { credentials: 'same-origin' })
+      .then(function(r) {
+        if (r.status === 403) { window.location = '/admin'; return; }
+        return r.json();
+      })
+      .then(function(data) {
+        if (!data) return;
+        var html = '';
+        var types = [
+          { key: 'task_assigned', label: 'Task assigned', desc: 'Sent when a task is assigned. The assignee gets the email; add more addresses here to also notify others.' },
+          { key: 'due_soon', label: 'Due soon', desc: 'Reminder when a task is due soon.' },
+          { key: 'digest', label: 'Digest', desc: 'Periodic summary of tasks/updates.' }
+        ];
+        types.forEach(function(t) {
+          var s = data[t.key] || { enabled: false, recipients: [] };
+          var recStr = Array.isArray(s.recipients) ? s.recipients.join(', ') : (s.recipients || '');
+          html += '<div class="form-group" style="margin-bottom:1.5rem; padding:1rem; background: var(--bg-panel); border-radius: var(--radius-sm);">';
+          html += '<label style="display:flex; align-items:center; gap:0.5rem;">';
+          html += '<input type="checkbox" class="admin-enabled" data-type="' + t.key + '" ' + (s.enabled ? 'checked' : '') + '> ';
+          html += '<strong>' + t.label + '</strong></label>';
+          html += '<p class="text-secondary" style="margin:0.25rem 0 0.5rem 0; font-size:0.875rem;">' + t.desc + '</p>';
+          html += '<label for="rec-' + t.key + '" style="font-size:0.8125rem;">Recipients (comma-separated emails)</label>';
+          html += '<input type="text" id="rec-' + t.key + '" class="input admin-recipients" data-type="' + t.key + '" value="' + (recStr.replace(/"/g, '&quot;')) + '" placeholder="email1@example.com, email2@example.com" style="margin-top:0.25rem;">';
+          html += '</div>';
+        });
+        container.innerHTML = html;
+
+        container.querySelectorAll('.admin-enabled').forEach(function(cb) {
+          cb.addEventListener('change', saveOne);
+        });
+        container.querySelectorAll('.admin-recipients').forEach(function(inp) {
+          inp.addEventListener('blur', saveOne);
+          inp.addEventListener('keydown', function(e) { if (e.key === 'Enter') saveOne.call(this); });
+        });
+      });
+  }
+
+  function saveOne() {
+    var type = this.dataset && this.dataset.type;
+    if (!type) return;
+    var div = this.closest('.form-group');
+    var enabledEl = div && div.querySelector('.admin-enabled');
+    var recEl = div && div.querySelector('.admin-recipients');
+    var enabled = enabledEl ? enabledEl.checked : false;
+    var recipients = recEl ? recEl.value.trim() : '';
+    statusEl.textContent = 'Saving…';
+    fetch('/api/admin/email-settings', {
+      method: 'PATCH',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email_type: type, enabled: enabled, recipients: recipients })
+    })
+      .then(function(r) {
+        if (r.status === 403) { window.location = '/admin'; return; }
+        statusEl.textContent = 'Saved.';
+        setTimeout(function() { statusEl.textContent = ''; }, 2000);
+      })
+      .catch(function() { statusEl.textContent = 'Failed to save.'; });
+  }
+
+  load();
+})();
+</script>
+{% endblock %}

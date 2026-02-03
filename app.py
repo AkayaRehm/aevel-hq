@@ -2,6 +2,7 @@
 B.L.A.S.T. Analytics — Web app entrypoint.
 Render-ready; cron/webhook trigger; health check; dashboard (calendar, tasks, notes, AI).
 Email/password authentication with SQLite database.
+Zoho Mail (hello.aevel@zohomail.com) for notifications; admin area to control what emails go to whom.
 """
 
 import json
@@ -21,6 +22,22 @@ from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-key-change-in-production-" + str(uuid.uuid4()))
+
+# Zoho Mail (free zohomail.com) — emails sent from hello.aevel@zohomail.com
+ZOHO_EMAIL = os.environ.get("ZOHO_EMAIL", "hello.aevel@zohomail.com")
+ZOHO_PASSWORD = os.environ.get("ZOHO_PASSWORD", "")
+app.config["MAIL_SERVER"] = "smtp.zoho.com"
+app.config["MAIL_PORT"] = 465
+app.config["MAIL_USE_SSL"] = True
+app.config["MAIL_USERNAME"] = ZOHO_EMAIL
+app.config["MAIL_PASSWORD"] = ZOHO_PASSWORD
+app.config["MAIL_DEFAULT_SENDER"] = ("Aevel", ZOHO_EMAIL)
+
+try:
+    from flask_mail import Mail
+    mail = Mail(app)
+except Exception:
+    mail = None
 
 # Ensure .tmp exists
 TMP_DIR = ROOT / ".tmp"
@@ -89,7 +106,62 @@ def init_db():
     conn.close()
 
 
+def migrate_db():
+    """Add new columns and tables (tasks assignee/urgency, workspace_pages, flowcharts, email_settings)."""
+    conn = get_db()
+    for col, ctype in [("assigned_to", "TEXT"), ("due_date", "TEXT"), ("urgency", "TEXT")]:
+        try:
+            conn.execute(f"ALTER TABLE tasks ADD COLUMN {col} {ctype}")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass  # column exists
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS workspace_pages (
+            id TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            body TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS flowcharts (
+            id TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            mermaid_text TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS email_settings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email_type TEXT UNIQUE NOT NULL,
+            enabled INTEGER DEFAULT 0,
+            recipients TEXT DEFAULT '',
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.commit()
+    # Seed email types if missing
+    for etype in ("task_assigned", "due_soon", "digest"):
+        try:
+            conn.execute(
+                "INSERT INTO email_settings (email_type, enabled, recipients) VALUES (?, 0, '')",
+                (etype,),
+            )
+            conn.commit()
+        except sqlite3.IntegrityError:
+            pass
+    conn.close()
+
+
 init_db()
+migrate_db()
 
 
 def login_required(f):
@@ -102,9 +174,66 @@ def login_required(f):
     return decorated_function
 
 
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
+
+
+def admin_required(f):
+    """Decorator to require admin session (password-protected admin box)."""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not session.get("admin"):
+            return jsonify({"error": "Admin access required"}), 403
+        return f(*args, **kwargs)
+    return decorated_function
+
+
 def get_user_id():
     """Get current user ID from session."""
     return session.get("user_id")
+
+
+def get_email_settings():
+    """Return dict of email_type -> {enabled: bool, recipients: list of emails}."""
+    conn = get_db()
+    rows = conn.execute("SELECT email_type, enabled, recipients FROM email_settings").fetchall()
+    conn.close()
+    return {
+        r["email_type"]: {
+            "enabled": bool(r["enabled"]),
+            "recipients": [e.strip() for e in (r["recipients"] or "").split(",") if e.strip()],
+        }
+        for r in rows
+    }
+
+
+def send_app_email(email_type, subject, body_html_or_text, to_emails=None):
+    """Send email via Zoho if this type is enabled and recipients exist. Uses admin list; if to_emails given (e.g. assignee), merges with admin list."""
+    if not mail or not ZOHO_PASSWORD:
+        return False
+    settings = get_email_settings()
+    conf = settings.get(email_type, {})
+    if not conf.get("enabled"):
+        return False
+    admin_list = conf.get("recipients") or []
+    if isinstance(admin_list, str):
+        admin_list = [e.strip() for e in admin_list.split(",") if e.strip()]
+    if to_emails is not None:
+        extra = to_emails if isinstance(to_emails, list) else [to_emails]
+        recipients = list(dict.fromkeys([e.strip() for e in extra if e and str(e).strip()] + admin_list))
+    else:
+        recipients = admin_list
+    if not recipients:
+        return False
+    try:
+        from flask_mail import Message
+        msg = Message(subject=subject, recipients=recipients, body=body_html_or_text)
+        if "<" in body_html_or_text and ">" in body_html_or_text:
+            msg.html = body_html_or_text
+            msg.body = body_html_or_text.replace("<br>", "\n").replace("</p>", "\n")
+        mail.send(msg)
+        return True
+    except Exception:
+        return False
 
 
 def run_pipeline():
@@ -225,6 +354,62 @@ def register():
 def logout():
     session.clear()
     return redirect(url_for("login"))
+
+
+# — Admin (password-protected; control what emails get sent and to whom)
+@app.route("/admin", methods=["GET", "POST"])
+def admin_page():
+    if request.method == "POST":
+        password = request.form.get("password") or ""
+        if ADMIN_PASSWORD and password == ADMIN_PASSWORD:
+            session["admin"] = True
+            return redirect(url_for("admin_page"))
+        flash("Invalid admin password", "error")
+    if session.get("admin"):
+        return render_template("admin.html", zoho_email=ZOHO_EMAIL)
+    return render_template("admin_login.html")
+
+
+@app.route("/admin/logout", methods=["GET", "POST"])
+def admin_logout():
+    session.pop("admin", None)
+    return redirect(url_for("admin_page"))
+
+
+@app.route("/api/admin/email-settings", methods=["GET"])
+@admin_required
+def api_admin_email_settings_get():
+    return jsonify(get_email_settings())
+
+
+@app.route("/api/admin/email-settings", methods=["PATCH"])
+@admin_required
+def api_admin_email_settings_update():
+    data = request.get_json(silent=True) or {}
+    email_type = (data.get("email_type") or "").strip()
+    if not email_type:
+        return jsonify({"error": "email_type required"}), 400
+    conn = get_db()
+    row = conn.execute("SELECT 1 FROM email_settings WHERE email_type = ?", (email_type,)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"error": "unknown email_type"}), 400
+    if "enabled" in data:
+        conn.execute(
+            "UPDATE email_settings SET enabled = ?, updated_at = CURRENT_TIMESTAMP WHERE email_type = ?",
+            (1 if data["enabled"] else 0, email_type),
+        )
+    if "recipients" in data:
+        rec = data["recipients"]
+        if isinstance(rec, list):
+            rec = ",".join(str(e).strip() for e in rec if str(e).strip())
+        conn.execute(
+            "UPDATE email_settings SET recipients = ?, updated_at = CURRENT_TIMESTAMP WHERE email_type = ?",
+            (rec or "", email_type),
+        )
+    conn.commit()
+    conn.close()
+    return jsonify(get_email_settings())
 
 
 @app.route("/", methods=["GET"])
@@ -364,15 +549,32 @@ def api_dashboard_stats():
     })
 
 
-# — API: tasks
+# — API: tasks (with assignee, due_date, urgency; task_assigned email when assigned_to set)
+def _task_row_to_json(r):
+    return {
+        "id": r["id"],
+        "text": r["text"],
+        "done": bool(r["done"]),
+        "assigned_to": (r["assigned_to"] or "").strip() if "assigned_to" in r.keys() else "",
+        "due_date": (r["due_date"] or "").strip() if "due_date" in r.keys() else "",
+        "urgency": (r["urgency"] or "normal").strip() if "urgency" in r.keys() else "normal",
+    }
+
+
 @app.route("/api/tasks", methods=["GET"])
 @login_required
 def api_tasks_list():
     user_id = get_user_id()
     conn = get_db()
-    rows = conn.execute("SELECT id, text, done FROM tasks WHERE user_id = ? ORDER BY created_at DESC", (user_id,)).fetchall()
+    rows = conn.execute(
+        "SELECT id, text, done, assigned_to, due_date, urgency FROM tasks WHERE user_id = ? ORDER BY created_at DESC",
+        (user_id,),
+    ).fetchall()
     conn.close()
-    tasks = [{"id": r["id"], "text": r["text"], "done": bool(r["done"])} for r in rows]
+    try:
+        tasks = [_task_row_to_json(dict(r)) for r in rows]
+    except Exception:
+        tasks = [{"id": r["id"], "text": r["text"], "done": bool(r["done"]), "assigned_to": "", "due_date": "", "urgency": "normal"} for r in rows]
     return jsonify({"tasks": tasks})
 
 
@@ -385,11 +587,24 @@ def api_tasks_create():
     if not text:
         return jsonify({"error": "text required"}), 400
     task_id = str(uuid.uuid4())
+    assigned_to = (data.get("assigned_to") or "").strip()
+    due_date = (data.get("due_date") or "").strip()
+    urgency = (data.get("urgency") or "normal").strip() or "normal"
     conn = get_db()
-    conn.execute("INSERT INTO tasks (id, user_id, text) VALUES (?, ?, ?)", (task_id, user_id, text))
+    conn.execute(
+        "INSERT INTO tasks (id, user_id, text, assigned_to, due_date, urgency) VALUES (?, ?, ?, ?, ?, ?)",
+        (task_id, user_id, text, assigned_to, due_date, urgency),
+    )
     conn.commit()
     conn.close()
-    return jsonify({"id": task_id, "text": text, "done": False}), 201
+    if assigned_to:
+        send_app_email(
+            "task_assigned",
+            "Task assigned: " + text[:50],
+            f"<p>You were assigned a task:</p><p><strong>{text}</strong></p><p>Urgency: {urgency}</p><p>Due: {due_date or 'Not set'}</p>",
+            to_emails=[assigned_to],
+        )
+    return jsonify({"id": task_id, "text": text, "done": False, "assigned_to": assigned_to, "due_date": due_date, "urgency": urgency}), 201
 
 
 @app.route("/api/tasks/<tid>", methods=["PATCH"])
@@ -398,18 +613,42 @@ def api_tasks_update(tid):
     user_id = get_user_id()
     data = request.get_json(silent=True) or {}
     conn = get_db()
+    row = conn.execute("SELECT id, text, done, assigned_to, due_date, urgency FROM tasks WHERE id = ? AND user_id = ?", (tid, user_id)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"error": "not found"}), 404
+    row = dict(row)
+    prev_assigned = (row.get("assigned_to") or "").strip()
     if "done" in data:
         conn.execute("UPDATE tasks SET done = ? WHERE id = ? AND user_id = ?", (1 if data["done"] else 0, tid, user_id))
     if "text" in data:
         text = str(data["text"]).strip()
         if text:
             conn.execute("UPDATE tasks SET text = ? WHERE id = ? AND user_id = ?", (text, tid, user_id))
+            row["text"] = text
+    if "assigned_to" in data:
+        assigned_to = (data.get("assigned_to") or "").strip()
+        conn.execute("UPDATE tasks SET assigned_to = ? WHERE id = ? AND user_id = ?", (assigned_to, tid, user_id))
+        row["assigned_to"] = assigned_to
+        if assigned_to and assigned_to != prev_assigned:
+            send_app_email(
+                "task_assigned",
+                "Task assigned: " + (row.get("text") or "")[:50],
+                f"<p>You were assigned a task:</p><p><strong>{row.get('text', '')}</strong></p><p>Urgency: {row.get('urgency') or 'normal'}</p><p>Due: {row.get('due_date') or 'Not set'}</p>",
+                to_emails=[assigned_to],
+            )
+    if "due_date" in data:
+        due_date = (str(data["due_date"]) or "").strip()
+        conn.execute("UPDATE tasks SET due_date = ? WHERE id = ? AND user_id = ?", (due_date, tid, user_id))
+        row["due_date"] = due_date
+    if "urgency" in data:
+        urgency = (str(data["urgency"]) or "normal").strip() or "normal"
+        conn.execute("UPDATE tasks SET urgency = ? WHERE id = ? AND user_id = ?", (urgency, tid, user_id))
+        row["urgency"] = urgency
     conn.commit()
-    row = conn.execute("SELECT id, text, done FROM tasks WHERE id = ? AND user_id = ?", (tid, user_id)).fetchone()
+    row = conn.execute("SELECT id, text, done, assigned_to, due_date, urgency FROM tasks WHERE id = ? AND user_id = ?", (tid, user_id)).fetchone()
     conn.close()
-    if not row:
-        return jsonify({"error": "not found"}), 404
-    return jsonify({"id": row["id"], "text": row["text"], "done": bool(row["done"])})
+    return jsonify(_task_row_to_json(dict(row)))
 
 
 @app.route("/api/tasks/<tid>", methods=["DELETE"])

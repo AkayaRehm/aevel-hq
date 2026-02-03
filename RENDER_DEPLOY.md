@@ -69,8 +69,11 @@ Render should auto-detect settings from `render.yaml`, but verify:
 
 Click **Environment** tab and add:
 
-### Required (for basic dashboard):
-- None! The dashboard works without any env vars.
+### Recommended (login + admin + email):
+- **SECRET_KEY** — Render can auto-generate this; or use a long random string for session security.
+- **ADMIN_PASSWORD** — Password to access `/admin` (control which emails are sent and to whom).
+- **ZOHO_EMAIL** — `hello.aevel@zohomail.com` (sender address).
+- **ZOHO_PASSWORD** — Your Zoho Mail password (or app password if 2FA is on).
 
 ### Optional (for full features):
 
@@ -105,12 +108,9 @@ Click **Environment** tab and add:
 ## Step 7: Test Your Deployment
 
 Open your Render URL:
-- `https://YOUR-APP-NAME.onrender.com` → Should redirect to dashboard
-- `https://YOUR-APP-NAME.onrender.com/dashboard` → Dashboard page
-- `https://YOUR-APP-NAME.onrender.com/calendar` → Calendar
-- `https://YOUR-APP-NAME.onrender.com/tasks` → Tasks
-- `https://YOUR-APP-NAME.onrender.com/notes` → Notes
-- `https://YOUR-APP-NAME.onrender.com/ai` → AI area
+- `https://YOUR-APP-NAME.onrender.com` → Redirects to login
+- `https://YOUR-APP-NAME.onrender.com/dashboard` → Dashboard (after login)
+- `https://YOUR-APP-NAME.onrender.com/admin` → Admin (password from `ADMIN_PASSWORD`)
 - `https://YOUR-APP-NAME.onrender.com/health` → Health check API
 
 ---
