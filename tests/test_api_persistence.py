@@ -115,10 +115,29 @@ class TestApiPersistence(unittest.TestCase):
         self.assertEqual(r2.status_code, 200)
         events = r2.get_json().get("events", [])
         self.assertTrue(any(e["id"] == eid for e in events))
-        r3 = self.client.delete("/api/events/" + eid)
+        r3 = self.client.patch("/api/events/" + eid, json={"date": "2026-02-03", "title": "Meeting updated"})
         self.assertEqual(r3.status_code, 200)
-        r4 = self.client.get("/api/events")
-        self.assertFalse(any(e["id"] == eid for e in r4.get_json().get("events", [])))
+        self.assertEqual(r3.get_json()["title"], "Meeting updated")
+        self.assertEqual(r3.get_json()["date"], "2026-02-03")
+        r4 = self.client.delete("/api/events/" + eid)
+        self.assertEqual(r4.status_code, 200)
+        r5 = self.client.get("/api/events")
+        self.assertFalse(any(e["id"] == eid for e in r5.get_json().get("events", [])))
+
+    def test_activity_recent_and_batch_delete(self):
+        r = self.client.get("/api/activity/recent")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("items", r.get_json())
+        r2 = self.client.post("/api/tasks", json={"text": "Batch one"})
+        tid1 = r2.get_json()["id"]
+        r3 = self.client.post("/api/tasks", json={"text": "Batch two"})
+        tid2 = r3.get_json()["id"]
+        r4 = self.client.post("/api/tasks/batch-delete", json={"ids": [tid1, tid2]})
+        self.assertEqual(r4.status_code, 200)
+        self.assertEqual(r4.get_json().get("deleted"), 2)
+        r5 = self.client.get("/api/tasks")
+        self.assertFalse(any(t["id"] == tid1 for t in r5.get_json().get("tasks", [])))
+        self.assertFalse(any(t["id"] == tid2 for t in r5.get_json().get("tasks", [])))
 
     def test_tasks_create_list_patch_delete(self):
         r = self.client.post(

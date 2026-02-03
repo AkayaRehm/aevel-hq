@@ -6,6 +6,7 @@
 </div>
 
 <div class="dashboard-surface">
+  <div class="dashboard-insights" id="dashboard-insights" style="margin-bottom: var(--space-5); font-size: var(--text-sm); color: var(--text-secondary);"></div>
   <div class="dashboard-summary" id="dashboard-summary">
     <div class="dashboard-summary-item">
       <div class="card-value" id="kpi-tasks"><span class="skeleton" style="display:inline-block;width:2rem;height:1.5rem;vertical-align:middle;"></span></div>
@@ -37,14 +38,14 @@
       <div id="widget-tasks-list" class="widget-tasks-list"></div>
     </div>
     <div class="dashboard-block">
-      <div class="dashboard-block-title">Activity</div>
+      <div class="dashboard-block-title">Recent activity</div>
       <div class="table-wrap">
         <table class="table" id="recent-table">
           <thead>
             <tr>
-              <th>Type</th>
-              <th>Item</th>
-              <th>Status</th>
+              <th>Action</th>
+              <th>Resource</th>
+              <th>When</th>
             </tr>
           </thead>
           <tbody id="recent-tbody">
@@ -70,7 +71,7 @@
   fetch('/api/preferences').then(function(r) { return r.json(); }).then(applyPrefs).catch(function() {});
 
   function loadStats() {
-    fetch('/api/dashboard/stats')
+    fetch('/api/dashboard/stats', { credentials: 'same-origin' })
       .then(function(r) { return r.json(); })
       .then(function(d) {
         var total = d.tasks_total || 0;
@@ -80,6 +81,14 @@
         document.getElementById('kpi-done').textContent = done;
         document.getElementById('kpi-notes').textContent = d.notes_count || 0;
         document.getElementById('kpi-events').textContent = d.events_count || 0;
+        var insightsEl = document.getElementById('dashboard-insights');
+        if (insightsEl && (d.tasks_due_soon !== undefined || d.events_this_week !== undefined)) {
+          var parts = [];
+          if (d.tasks_due_soon > 0) parts.push(d.tasks_due_soon + ' task' + (d.tasks_due_soon === 1 ? '' : 's') + ' due this week');
+          if (d.events_this_week > 0) parts.push(d.events_this_week + ' event' + (d.events_this_week === 1 ? '' : 's') + ' this week');
+          insightsEl.textContent = parts.length ? parts.join(' · ') : '';
+          insightsEl.style.display = parts.length ? '' : 'none';
+        }
       })
       .catch(function() {
         document.getElementById('kpi-tasks').textContent = '—';
@@ -90,28 +99,22 @@
       });
   }
 
+  var actionLabels = { task_create: 'Task created', task_update: 'Task updated', task_delete: 'Task deleted', note_create: 'Report created', note_delete: 'Report deleted', event_create: 'Event added', event_update: 'Event updated', event_delete: 'Event deleted', workspace_create: 'Page created', workspace_update: 'Page updated', workspace_delete: 'Page deleted', flowchart_create: 'Flowchart created', flowchart_update: 'Flowchart updated', flowchart_delete: 'Flowchart deleted', community_note_create: 'Idea posted', community_note_delete: 'Idea removed', preferences_update: 'Settings updated', login: 'Signed in', register: 'Registered' };
   function loadRecent() {
-    Promise.all([
-      fetch('/api/tasks').then(function(r) { return r.json(); }),
-      fetch('/api/notes').then(function(r) { return r.json(); })
-    ])
-      .then(function(arr) {
-        var tasks = (arr[0].tasks || []).map(function(t) { return { type: 'Task', desc: t.text, status: t.done ? 'Done' : 'Active', created_at: t.created_at || '' }; });
-        var notes = (arr[1].notes || []).map(function(n) { return { type: 'Report', desc: n.title, status: '—', created_at: n.created_at || '' }; });
-        var rows = tasks.concat(notes);
-        rows.sort(function(a, b) {
-          var da = a.created_at || '';
-          var db = b.created_at || '';
-          return db.localeCompare(da);
-        });
-        rows = rows.slice(0, 10);
+    fetch('/api/activity/recent', { credentials: 'same-origin' })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        var items = data.items || [];
         var tbody = document.getElementById('recent-tbody');
         if (!tbody) return;
-        if (rows.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="3"><div class="empty-state"><p class="empty-state__title">No activity</p><p><a href="/tasks">Tasks</a> · <a href="/reports">Reports</a></p></div></td></tr>';
+        if (items.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="3"><div class="empty-state"><p class="empty-state__title">No activity yet</p><p><a href="/tasks">Tasks</a> · <a href="/calendar">Calendar</a> · <a href="/reports">Reports</a></p></div></td></tr>';
         } else {
-          tbody.innerHTML = rows.map(function(r) {
-            return '<tr><td class="cell-primary">' + (r.type || '') + '</td><td>' + (r.desc || '').substring(0, 48) + '</td><td>' + (r.status || '') + '</td></tr>';
+          tbody.innerHTML = items.slice(0, 15).map(function(r) {
+            var label = actionLabels[r.action] || r.action.replace(/_/g, ' ');
+            var resource = (r.resource_type || '') + (r.resource_id ? ' #' + String(r.resource_id).slice(0, 8) : '');
+            var when = r.created_at ? new Date(r.created_at).toLocaleDateString(undefined, { dateStyle: 'short', timeStyle: 'short' }) : '—';
+            return '<tr><td class="cell-primary">' + (label || '—') + '</td><td>' + (resource || '—') + '</td><td>' + when + '</td></tr>';
           }).join('');
         }
       })

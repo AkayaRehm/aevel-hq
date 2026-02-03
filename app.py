@@ -1016,12 +1016,26 @@ def api_dashboard_stats():
     tasks_done = conn.execute("SELECT COUNT(*) as c FROM tasks WHERE user_id = ? AND done = 1", (user_id,)).fetchone()["c"]
     notes = conn.execute("SELECT COUNT(*) as c FROM notes WHERE user_id = ?", (user_id,)).fetchone()["c"]
     events = conn.execute("SELECT COUNT(*) as c FROM events WHERE user_id = ?", (user_id,)).fetchone()["c"]
+    # Quick insights: tasks due in next 7 days (not done), events this week
+    from datetime import datetime, timedelta
+    today = datetime.utcnow().date().isoformat()
+    week_later = (datetime.utcnow().date() + timedelta(days=7)).isoformat()
+    tasks_due_soon = conn.execute(
+        "SELECT COUNT(*) as c FROM tasks WHERE user_id = ? AND done = 0 AND due_date IS NOT NULL AND due_date != '' AND due_date >= ? AND due_date <= ?",
+        (user_id, today, week_later),
+    ).fetchone()["c"]
+    events_this_week = conn.execute(
+        "SELECT COUNT(*) as c FROM events WHERE user_id = ? AND date >= ? AND date <= ?",
+        (user_id, today, week_later),
+    ).fetchone()["c"]
     conn.close()
     return jsonify({
         "tasks_total": tasks,
         "tasks_done": tasks_done,
         "notes_count": notes,
         "events_count": events,
+        "tasks_due_soon": tasks_due_soon,
+        "events_this_week": events_this_week,
     })
 
 
@@ -1226,6 +1240,33 @@ def api_events_create():
     return jsonify({"id": event_id, "date": date, "title": title}), 201
 
 
+@app.route("/api/events/<eid>", methods=["PATCH"])
+@login_required
+def api_events_update(eid):
+    user_id = get_user_id()
+    data = request.get_json(silent=True) or {}
+    conn = get_db()
+    row = conn.execute(
+        "SELECT id, date, title FROM events WHERE id = ? AND user_id = ?", (eid, user_id)
+    ).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"error": "not found"}), 404
+    date = (data.get("date") or "").strip() if "date" in data else row["date"]
+    title = (data.get("title") or "").strip() if "title" in data else row["title"]
+    if not date or not title:
+        conn.close()
+        return jsonify({"error": "date and title required"}), 400
+    conn.execute(
+        "UPDATE events SET date = ?, title = ? WHERE id = ? AND user_id = ?",
+        (date, title, eid, user_id),
+    )
+    conn.commit()
+    log_activity(user_id, "event_update", "event", eid)
+    conn.close()
+    return jsonify({"id": eid, "date": date, "title": title}), 200
+
+
 @app.route("/api/events/<eid>", methods=["DELETE"])
 @login_required
 def api_events_delete(eid):
@@ -1236,6 +1277,95 @@ def api_events_delete(eid):
     conn.close()
     log_activity(user_id, "event_delete", "event", eid)
     return jsonify({"ok": True}), 200
+
+
+# — API: activity feed (recent actions for dashboard)
+@app.route("/api/activity/recent", methods=["GET"])
+@login_required
+def api_activity_recent():
+    user_id = get_user_id()
+    limit = min(int(request.args.get("limit", 20)), 50)
+    conn = get_db()
+    rows = conn.execute(
+        """SELECT id, user_id, action, resource_type, resource_id, details, created_at
+           FROM activity_log WHERE user_id = ? ORDER BY created_at DESC LIMIT ?""",
+        (user_id, limit),
+    ).fetchall()
+    conn.close()
+    items = []
+    for r in rows:
+        details = None
+        if r["details"]:
+            try:
+                details = json.loads(r["details"])
+            except (TypeError, json.JSONDecodeError):
+                pass
+        items.append({
+            "id": r["id"],
+            "action": r["action"],
+            "resource_type": r["resource_type"] or "",
+            "resource_id": r["resource_id"] or "",
+            "details": details,
+            "created_at": r["created_at"],
+        })
+    return jsonify({"items": items})
+
+
+# — API: batch delete tasks
+@app.route("/api/tasks/batch-delete", methods=["POST"])
+@login_required
+def api_tasks_batch_delete():
+    user_id = get_user_id()
+    data = request.get_json(silent=True) or {}
+    ids = data.get("ids") or []
+    if not isinstance(ids, list):
+        return jsonify({"error": "ids must be a list"}), 400
+    ids = [str(i).strip() for i in ids if i]
+    if not ids:
+        return jsonify({"ok": True, "deleted": 0}), 200
+    conn = get_db()
+    placeholders = ",".join("?" * len(ids))
+    cur = conn.execute(
+        f"DELETE FROM tasks WHERE user_id = ? AND id IN ({placeholders})",
+        (user_id, *ids),
+    )
+    deleted = cur.rowcount
+    conn.commit()
+    for tid in ids:
+        log_activity(user_id, "task_delete", "task", tid)
+    conn.close()
+    return jsonify({"ok": True, "deleted": deleted}), 200
+
+
+# — API: export notes as CSV
+@app.route("/api/notes/export", methods=["GET"])
+@login_required
+def api_notes_export():
+    import csv as csv_module
+    import io
+    user_id = get_user_id()
+    fmt = (request.args.get("format") or "csv").strip().lower()
+    if fmt != "csv":
+        return jsonify({"error": "format must be csv"}), 400
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT id, title, body, created_at FROM notes WHERE user_id = ? ORDER BY created_at DESC",
+        (user_id,),
+    ).fetchall()
+    conn.close()
+    buf = io.StringIO()
+    w = csv_module.writer(buf)
+    w.writerow(["Title", "Body", "Created"])
+    for r in rows:
+        w.writerow([
+            (r["title"] or "").replace("\r", ""),
+            (r["body"] or "").replace("\r", "").replace("\n", " "),
+            r["created_at"] or "",
+        ])
+    from flask import Response
+    return Response(buf.getvalue(), mimetype="text/csv", headers={
+        "Content-Disposition": "attachment; filename=aevel-reports.csv",
+    })
 
 
 # — API: AI query (routing/formatting only)

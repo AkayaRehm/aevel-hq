@@ -30,7 +30,7 @@
     <textarea id="admin-custom-body" class="textarea" rows="5" placeholder="Type your message here…"></textarea>
   </div>
   <button type="button" id="admin-custom-send" class="btn btn-primary">Send now</button>
-  <span id="admin-custom-status" class="text-secondary" style="margin-left: 0.75rem;"></span>
+  <span id="admin-custom-status" class="text-secondary admin-status" style="margin-left: 0.75rem;"></span>
 </div>
 
 <div class="card" style="max-width: 720px;">
@@ -94,14 +94,30 @@
               credentials: 'same-origin',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ email_type: type })
-            }).then(function(r) { return r.json(); }).then(function(res) {
-              statusEl.textContent = res.message || (res.ok ? 'Sent.' : 'Not sent.');
-              statusEl.className = res.ok ? 'text-secondary' : 'text-secondary';
-              statusEl.style.color = res.ok ? '' : 'var(--color-danger, #c0392b)';
-              setTimeout(function() { statusEl.textContent = ''; statusEl.style.color = ''; }, 6000);
-            }).catch(function(err) {
-              statusEl.textContent = 'Request failed. Check console.';
+            }).then(function(r) {
+              return r.text().then(function(text) {
+                var res = null;
+                try { res = text ? JSON.parse(text) : null; } catch (e) {}
+                if (r.status === 403) {
+                  statusEl.textContent = res && (res.error || res.message) ? res.error || res.message : 'Session expired. Please log in again.';
+                  statusEl.style.color = 'var(--color-danger, #c0392b)';
+                  setTimeout(function() { statusEl.textContent = ''; statusEl.style.color = ''; }, 6000);
+                  return;
+                }
+                if (res && (res.message !== undefined || res.ok !== undefined)) {
+                  statusEl.textContent = res.message || (res.ok ? 'Sent.' : 'Not sent.');
+                  statusEl.style.color = res.ok ? '' : 'var(--color-danger, #c0392b)';
+                  setTimeout(function() { statusEl.textContent = ''; statusEl.style.color = ''; }, 6000);
+                  return;
+                }
+                statusEl.textContent = r.ok ? 'Sent.' : (r.status >= 500 ? 'Server error.' : 'Request failed.');
+                statusEl.style.color = 'var(--color-danger, #c0392b)';
+                setTimeout(function() { statusEl.textContent = ''; statusEl.style.color = ''; }, 6000);
+              });
+            }).catch(function() {
+              statusEl.textContent = 'Network error. Check connection and try again.';
               statusEl.style.color = 'var(--color-danger, #c0392b)';
+              setTimeout(function() { statusEl.textContent = ''; statusEl.style.color = ''; }, 6000);
             }).finally(function() {
               btn.disabled = false;
               btn.textContent = 'Send now';
@@ -137,6 +153,13 @@
       .catch(function() { statusEl.textContent = 'Failed to save.'; });
   }
 
+  function setStatus(el, msg, isError) {
+    if (!el) return;
+    el.textContent = msg;
+    el.style.color = isError ? 'var(--color-danger, #c0392b)' : '';
+    setTimeout(function() { el.textContent = ''; el.style.color = ''; }, 8000);
+  }
+
   document.getElementById('admin-custom-send').addEventListener('click', function() {
     var emailEl = document.getElementById('admin-custom-email');
     var subjectEl = document.getElementById('admin-custom-subject');
@@ -146,29 +169,39 @@
     var subject = (subjectEl && subjectEl.value || '').trim() || 'Message from Aevel';
     var body = (bodyEl && bodyEl.value || '').trim();
     if (!email) {
-      statusEl.textContent = 'Enter an email address.';
+      setStatus(statusEl, 'Enter an email address.', true);
       return;
     }
     if (!body) body = '(No message)';
     statusEl.textContent = 'Sending…';
+    statusEl.style.color = '';
     this.disabled = true;
     fetch('/api/admin/send-custom', {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: email, subject: subject, body: body })
-    }).then(function(r) { return r.json(); }).then(function(res) {
-      statusEl.textContent = res.message || (res.ok ? 'Sent.' : 'Failed.');
-      statusEl.style.color = res.ok ? '' : 'var(--color-danger, #c0392b)';
-      if (res.ok) {
-        emailEl.value = '';
-        bodyEl.value = '';
-        subjectEl.value = '';
-      }
-      setTimeout(function() { statusEl.textContent = ''; statusEl.style.color = ''; }, 8000);
+    }).then(function(r) {
+      return r.text().then(function(text) {
+        var res = null;
+        try { res = text ? JSON.parse(text) : null; } catch (e) {}
+        if (r.status === 403) {
+          setStatus(statusEl, res && (res.error || res.message) ? res.error || res.message : 'Session expired. Please log in again.', true);
+          return;
+        }
+        if (res && (res.message !== undefined || res.ok !== undefined)) {
+          setStatus(statusEl, res.message || (res.ok ? 'Sent.' : 'Failed.'), !res.ok);
+          if (res.ok) {
+            emailEl.value = '';
+            bodyEl.value = '';
+            subjectEl.value = '';
+          }
+          return;
+        }
+        setStatus(statusEl, r.ok ? 'Sent.' : (r.status >= 500 ? 'Server error.' : 'Request failed.'), !r.ok);
+      });
     }).catch(function() {
-      statusEl.textContent = 'Request failed. Check network.';
-      statusEl.style.color = 'var(--color-danger, #c0392b)';
+      setStatus(statusEl, 'Network error. Check connection and try again.', true);
     }).finally(function() {
       document.getElementById('admin-custom-send').disabled = false;
     });

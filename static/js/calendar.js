@@ -89,20 +89,28 @@
     });
   }
 
+  var eventFilterQuery = '';
   function renderEventsList(events, y, m) {
     if (!eventsListEl) return;
     var monthStr = String(m + 1).padStart(2, '0');
     var inMonth = events.filter(function(e) {
       return e.date && e.date.startsWith(y + '-' + monthStr);
     }).sort(function(a, b) { return (a.date || '').localeCompare(b.date || ''); });
+    var q = (eventFilterQuery || '').trim().toLowerCase();
+    if (q) inMonth = inMonth.filter(function(e) { return (e.title || '').toLowerCase().indexOf(q) !== -1; });
     eventsListEl.innerHTML = inMonth.length ? inMonth.map(function(ev) {
-      return '<li><span class="event-date">' + (ev.date || '') + '</span><span class="event-title">' + (ev.title || '').replace(/</g, '&lt;') + '</span><button type="button" class="btn btn-small btn-danger" data-id="' + (ev.id || '') + '" aria-label="Delete event">Delete</button></li>';
-    }).join('') : '<li class="empty-state"><p class="empty-state__title">No events this month</p><p>Click a day above and add an event.</p></li>';
-    eventsListEl.querySelectorAll('.btn-danger').forEach(function(btn) {
+      var escapedTitle = (ev.title || '').replace(/</g, '&lt;');
+      return '<li class="event-list-item" data-id="' + (ev.id || '') + '" data-date="' + (ev.date || '') + '" data-title="' + escapedTitle + '">' +
+        '<span class="event-date">' + (ev.date || '') + '</span><span class="event-title">' + escapedTitle + '</span>' +
+        '<div class="event-actions"><button type="button" class="btn btn-small btn-ghost event-edit" aria-label="Edit event">Edit</button>' +
+        '<button type="button" class="btn btn-small btn-danger event-delete" data-id="' + (ev.id || '') + '" aria-label="Delete event">Delete</button></div></li>';
+    }).join('') : '<li class="empty-state"><p class="empty-state__title">' + (eventFilterQuery ? 'No matching events' : 'No events this month') + '</p><p>Click a day above and add an event.</p></li>';
+    eventsListEl.querySelectorAll('.event-delete').forEach(function(btn) {
       btn.addEventListener('click', function() {
-        var id = btn.getAttribute('data-id');
+        var li = btn.closest('.event-list-item');
+        var id = (li && li.getAttribute('data-id')) || btn.getAttribute('data-id');
         if (!id) return;
-        var label = (btn.closest('li') && btn.closest('li').querySelector('.event-title') && btn.closest('li').querySelector('.event-title').textContent) || 'this event';
+        var label = (li && li.querySelector('.event-title') && li.querySelector('.event-title').textContent) || 'this event';
         if (typeof Aevel !== 'undefined' && Aevel.confirm) {
           Aevel.confirm({ title: 'Delete event', body: 'Delete “‘ + label.substring(0, 50) + (label.length > 50 ? '…”' : '”') + '?', confirmLabel: 'Delete', cancelLabel: 'Cancel', danger: true }, function() {
             api('DELETE', '/api/events/' + id).then(function() { renderCalendar(); if (Aevel.toast) Aevel.toast('Event deleted', 'success'); }).catch(function() {});
@@ -111,6 +119,50 @@
           api('DELETE', '/api/events/' + id).then(function() { renderCalendar(); }).catch(function() {});
         }
       });
+    });
+    eventsListEl.querySelectorAll('.event-edit').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var li = btn.closest('.event-list-item');
+        var id = li && li.getAttribute('data-id');
+        var date = li && li.getAttribute('data-date');
+        var title = (li && li.querySelector('.event-title') && li.querySelector('.event-title').textContent) || '';
+        if (!id) return;
+        var editRow = '<li class="event-edit-row" data-id="' + id + '">' +
+          '<input type="date" class="input input-sm event-edit-date" value="' + (date || '') + '">' +
+          '<input type="text" class="input input-sm event-edit-title" value="' + (title.replace(/"/g, '&quot;')) + '" placeholder="Title">' +
+          '<button type="button" class="btn btn-small btn-primary event-save">Save</button>' +
+          '<button type="button" class="btn btn-small btn-ghost event-cancel">Cancel</button></li>';
+        li.insertAdjacentHTML('afterend', editRow);
+        li.classList.add('hidden');
+        var next = li.nextElementSibling;
+        var dateInp = next.querySelector('.event-edit-date');
+        var titleInp = next.querySelector('.event-edit-title');
+        next.querySelector('.event-save').addEventListener('click', function() {
+          var newDate = (dateInp && dateInp.value || '').trim();
+          var newTitle = (titleInp && titleInp.value || '').trim();
+          if (!newDate || !newTitle) { if (typeof Aevel !== 'undefined' && Aevel.toast) Aevel.toast('Date and title required', 'error'); return; }
+          api('PATCH', '/api/events/' + id, { date: newDate, title: newTitle }).then(function() {
+            next.remove();
+            li.classList.remove('hidden');
+            renderCalendar();
+            if (typeof Aevel !== 'undefined' && Aevel.toast) Aevel.toast('Event updated', 'success');
+          }).catch(function() {});
+        });
+        next.querySelector('.event-cancel').addEventListener('click', function() {
+          next.remove();
+          li.classList.remove('hidden');
+        });
+      });
+    });
+  }
+  var calFilterEl = document.getElementById('cal-filter');
+  if (calFilterEl) {
+    calFilterEl.addEventListener('input', function() {
+      eventFilterQuery = this.value || '';
+      loadEvents().then(function(events) {
+        if (!events) events = [];
+        renderEventsList(events, current.getFullYear(), current.getMonth());
+      }).catch(function() {});
     });
   }
 

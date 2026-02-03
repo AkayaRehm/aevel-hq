@@ -33,6 +33,7 @@
         '<button type="button" class="btn btn-small btn-primary task-save-edit">Save</button>' +
         '<button type="button" class="btn btn-small task-cancel-edit">Cancel</button></div>';
       return '<li class="task-item ' + (t.done ? 'done' : '') + '" data-id="' + (t.id || '') + '">' +
+        '<input type="checkbox" class="task-select" aria-label="Select for batch">' +
         '<input type="checkbox" class="task-done" ' + (t.done ? 'checked' : '') + ' aria-label="Mark done">' +
         '<div class="task-body">' +
         '<span class="task-text">' + esc(t.text) + '</span>' +
@@ -43,6 +44,47 @@
         '<button type="button" class="btn btn-small btn-secondary task-edit" aria-label="Edit assignee and urgency">Edit</button>' +
         '<button type="button" class="btn btn-small btn-danger task-delete" aria-label="Delete task">Delete</button></div></li>';
     }).join('') : '<li class="empty-state"><p class="empty-state__title">No tasks yet</p><p>Add one above to get started.</p></li>';
+    function updateBatchBar() {
+      var bar = document.getElementById('task-batch-bar');
+      var countEl = bar && bar.querySelector('.task-batch-count');
+      var deleteBtn = document.getElementById('task-batch-delete');
+      var selected = list.querySelectorAll('.task-select:checked');
+      var n = selected.length;
+      if (bar) bar.classList.toggle('hidden', n === 0);
+      if (countEl) countEl.textContent = n ? n + ' selected' : '';
+      if (deleteBtn) deleteBtn.textContent = n ? 'Delete selected (' + n + ')' : 'Delete selected';
+    }
+    list.querySelectorAll('.task-select').forEach(function(cb) {
+      cb.addEventListener('change', updateBatchBar);
+    });
+    var batchDeleteBtn = document.getElementById('task-batch-delete');
+    var batchCancelBtn = document.getElementById('task-batch-cancel');
+    if (batchDeleteBtn) {
+      batchDeleteBtn.addEventListener('click', function() {
+        var ids = [];
+        list.querySelectorAll('.task-select:checked').forEach(function(cb) {
+          var id = cb.closest('.task-item') && cb.closest('.task-item').getAttribute('data-id');
+          if (id) ids.push(id);
+        });
+        if (ids.length === 0) return;
+        if (typeof Aevel !== 'undefined' && Aevel.confirm) {
+          Aevel.confirm({ title: 'Delete tasks', body: 'Delete ' + ids.length + ' task(s)?', confirmLabel: 'Delete', cancelLabel: 'Cancel', danger: true }, function() {
+            api('POST', '/api/tasks/batch-delete', { ids: ids }).then(function() {
+              loadTasks().then(render);
+              if (typeof Aevel !== 'undefined' && Aevel.toast) Aevel.toast('Tasks deleted', 'success');
+            }).catch(function() {});
+          });
+        } else {
+          api('POST', '/api/tasks/batch-delete', { ids: ids }).then(function() { loadTasks().then(render); }).catch(function() {});
+        }
+      });
+    }
+    if (batchCancelBtn) {
+      batchCancelBtn.addEventListener('click', function() {
+        list.querySelectorAll('.task-select').forEach(function(cb) { cb.checked = false; });
+        updateBatchBar();
+      });
+    }
     list.querySelectorAll('.task-done').forEach(function(cb) {
       cb.addEventListener('change', function() {
         var id = cb.closest('.task-item').getAttribute('data-id');

@@ -432,7 +432,13 @@ body {
 .events-list li { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); padding: var(--space-3) 0; border-bottom: 1px solid var(--border); }
 .events-list li:last-child { border-bottom: none; }
 .events-list .event-date { font-size: var(--text-sm); color: var(--text-tertiary); min-width: 90px; }
-.events-list .event-title { font-weight: var(--weight-medium); color: var(--text); }
+.events-list .event-title { font-weight: var(--weight-medium); color: var(--text); flex: 1; min-width: 0; }
+.events-list .event-actions { display: flex; gap: var(--space-2); flex-shrink: 0; }
+.events-list .event-edit-row { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; padding: var(--space-3) 0; border-bottom: 1px solid var(--border); }
+.events-list .event-edit-row .event-edit-date { width: 140px; }
+.events-list .event-edit-row .event-edit-title { flex: 1; min-width: 120px; }
+.hidden { display: none !important; }
+.input-sm { padding: var(--space-1) var(--space-2); font-size: var(--text-xs); }
 
 /* -------------------------------------------------------------------------
    Tasks, notes, workspace, flowcharts, community, team tasks
@@ -450,6 +456,10 @@ body {
 .task-text, .team-task-text { flex: 1; font-size: var(--text-sm); color: var(--text-secondary); }
 .task-actions { display: flex; gap: var(--space-1); }
 .task-item input[type="checkbox"] { accent-color: var(--text); cursor: pointer; }
+.task-batch-bar { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) 0; margin-bottom: var(--space-2); font-size: var(--text-sm); color: var(--text-secondary); }
+.task-batch-bar.hidden { display: none !important; }
+.task-batch-count { margin-right: var(--space-2); }
+.task-item .task-select { flex-shrink: 0; margin-right: var(--space-1); }
 .task-form-add { display: flex; gap: var(--space-2); margin-bottom: var(--space-4); flex-wrap: wrap; align-items: center; }
 .task-form-add #task-input { flex: 1; min-width: 160px; margin-bottom: 0; }
 .task-form-add .input-sm { width: 140px; max-width: 100%; margin-bottom: 0; }
@@ -570,6 +580,15 @@ body {
 .toast--visible { opacity: 1; transform: translateY(0); }
 .toast--success { border-color: rgba(52, 199, 89, 0.3); color: var(--success); }
 .toast--error { border-color: rgba(255, 69, 58, 0.3); color: var(--danger); }
+
+/* Admin: status message (SMTP errors can be long) */
+.admin-status {
+  display: inline-block;
+  max-width: 36em;
+  vertical-align: middle;
+  font-size: var(--text-sm);
+  transition: color var(--ease);
+}
 
 .modal-overlay {
   position: fixed;
