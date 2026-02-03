@@ -23,13 +23,22 @@
       if (assignee) meta.push('<span class="task-meta task-assignee" title="Assigned to">' + assignee + '</span>');
       if (due) meta.push('<span class="task-meta task-due">Due ' + due + '</span>');
       meta.push('<span class="task-meta task-urgency task-urgency-' + urg + '">' + urgencyLabel(urg) + '</span>');
+      var editRow = '<div class="task-edit-row hidden">' +
+        '<input type="text" class="input input-sm task-edit-assignee" placeholder="Assign to (comma-separated)" value="' + esc(t.assigned_to || '') + '">' +
+        '<input type="text" class="input input-sm task-edit-due" placeholder="Due date" value="' + esc(t.due_date || '') + '">' +
+        '<select class="input input-sm task-edit-urgency"><option value="low"' + (urg === 'low' ? ' selected' : '') + '>Low</option><option value="normal"' + (urg === 'normal' ? ' selected' : '') + '>Normal</option><option value="high"' + (urg === 'high' ? ' selected' : '') + '>High</option></select>' +
+        '<button type="button" class="btn btn-small btn-primary task-save-edit">Save</button>' +
+        '<button type="button" class="btn btn-small task-cancel-edit">Cancel</button></div>';
       return '<li class="task-item ' + (t.done ? 'done' : '') + '" data-id="' + (t.id || '') + '">' +
         '<input type="checkbox" class="task-done" ' + (t.done ? 'checked' : '') + ' aria-label="Mark done">' +
         '<div class="task-body">' +
         '<span class="task-text">' + esc(t.text) + '</span>' +
         (meta.length ? '<div class="task-meta-row">' + meta.join('') + '</div>' : '') +
+        editRow +
         '</div>' +
-        '<div class="task-actions"><button type="button" class="btn btn-small btn-danger task-delete" aria-label="Delete task">Delete</button></div></li>';
+        '<div class="task-actions">' +
+        '<button type="button" class="btn btn-small btn-secondary task-edit" aria-label="Edit assignee and urgency">Edit</button>' +
+        '<button type="button" class="btn btn-small btn-danger task-delete" aria-label="Delete task">Delete</button></div></li>';
     }).join('') : '<li class="empty-state"><p class="empty-state__title">No tasks yet</p><p>Add one above to get started.</p></li>';
     list.querySelectorAll('.task-done').forEach(function(cb) {
       cb.addEventListener('change', function() {
@@ -37,6 +46,40 @@
         if (!id) return;
         var item = tasks.find(function(t) { return String(t.id) === id; });
         api('PATCH', '/api/tasks/' + id, { done: !item.done }).then(function() { loadTasks().then(render); });
+      });
+    });
+    list.querySelectorAll('.task-edit').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var row = btn.closest('.task-item');
+        var editRow = row && row.querySelector('.task-edit-row');
+        if (editRow) {
+          editRow.classList.remove('hidden');
+          btn.classList.add('hidden');
+        }
+      });
+    });
+    list.querySelectorAll('.task-save-edit').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var row = btn.closest('.task-item');
+        var id = row && row.getAttribute('data-id');
+        if (!id) return;
+        var editRow = row.querySelector('.task-edit-row');
+        var assignee = (row.querySelector('.task-edit-assignee') && row.querySelector('.task-edit-assignee').value || '').trim();
+        var due = (row.querySelector('.task-edit-due') && row.querySelector('.task-edit-due').value || '').trim();
+        var urgency = (row.querySelector('.task-edit-urgency') && row.querySelector('.task-edit-urgency').value) || 'normal';
+        api('PATCH', '/api/tasks/' + id, { assigned_to: assignee, due_date: due, urgency: urgency }).then(function() {
+          loadTasks().then(render);
+          if (typeof Aevel !== 'undefined' && Aevel.toast) Aevel.toast('Updated', 'success');
+        });
+      });
+    });
+    list.querySelectorAll('.task-cancel-edit').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var row = btn.closest('.task-item');
+        var editRow = row && row.querySelector('.task-edit-row');
+        var editBtn = row && row.querySelector('.task-edit');
+        if (editRow) editRow.classList.add('hidden');
+        if (editBtn) editBtn.classList.remove('hidden');
       });
     });
     list.querySelectorAll('.task-delete').forEach(function(btn) {

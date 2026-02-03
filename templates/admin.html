@@ -40,13 +40,14 @@
         types.forEach(function(t) {
           var s = data[t.key] || { enabled: false, recipients: [] };
           var recStr = Array.isArray(s.recipients) ? s.recipients.join(', ') : (s.recipients || '');
-          html += '<div class="form-group" style="margin-bottom:1.5rem; padding:1rem; background: var(--bg-panel); border-radius: var(--radius-sm);">';
+          html += '<div class="form-group admin-email-row" style="margin-bottom:1.5rem; padding:1rem; background: var(--bg-panel); border-radius: var(--radius-sm);">';
           html += '<label style="display:flex; align-items:center; gap:0.5rem;">';
           html += '<input type="checkbox" class="admin-enabled" data-type="' + t.key + '" ' + (s.enabled ? 'checked' : '') + '> ';
           html += '<strong>' + t.label + '</strong></label>';
           html += '<p class="text-secondary" style="margin:0.25rem 0 0.5rem 0; font-size:0.875rem;">' + t.desc + '</p>';
           html += '<label for="rec-' + t.key + '" style="font-size:0.8125rem;">Recipients (comma-separated emails)</label>';
           html += '<input type="text" id="rec-' + t.key + '" class="input admin-recipients" data-type="' + t.key + '" value="' + (recStr.replace(/"/g, '&quot;')) + '" placeholder="email1@example.com, email2@example.com" style="margin-top:0.25rem;">';
+          html += '<div style="margin-top:0.75rem;"><button type="button" class="btn btn-secondary btn-small admin-send-now" data-type="' + t.key + '">Send now</button></div>';
           html += '</div>';
         });
         container.innerHTML = html;
@@ -57,6 +58,28 @@
         container.querySelectorAll('.admin-recipients').forEach(function(inp) {
           inp.addEventListener('blur', saveOne);
           inp.addEventListener('keydown', function(e) { if (e.key === 'Enter') saveOne.call(this); });
+        });
+        container.querySelectorAll('.admin-send-now').forEach(function(btn) {
+          btn.addEventListener('click', function() {
+            var type = this.dataset && this.dataset.type;
+            if (!type) return;
+            this.disabled = true;
+            this.textContent = 'Sending…';
+            fetch('/api/admin/send-now', {
+              method: 'POST',
+              credentials: 'same-origin',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email_type: type })
+            }).then(function(r) { return r.json(); }).then(function(res) {
+              statusEl.textContent = res.message || (res.ok ? 'Sent.' : 'Not sent.');
+              setTimeout(function() { statusEl.textContent = ''; }, 3000);
+            }).catch(function() {
+              statusEl.textContent = 'Send failed.';
+            }).finally(function() {
+              btn.disabled = false;
+              btn.textContent = 'Send now';
+            });
+          });
         });
       });
   }

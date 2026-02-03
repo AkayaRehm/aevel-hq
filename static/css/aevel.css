@@ -291,6 +291,47 @@ body {
 .task-assignee { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .task-urgency-high { color: var(--danger); }
 .task-urgency-low { color: var(--text-tertiary); }
+.task-edit-row { margin-top: 0.5rem; display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; padding: 0.5rem 0; border-top: 1px solid var(--border); }
+.task-edit-row .input { margin-bottom: 0; }
+.task-edit-row .task-edit-assignee { min-width: 180px; }
+.task-edit-row .task-edit-due { width: 120px; }
+.task-edit-row .task-edit-urgency { width: auto; }
+.task-actions .btn.hidden { display: none; }
+
+/* Workspace (team docs) */
+.workspace-toolbar { margin-bottom: 1rem; }
+.workspace-layout { display: flex; gap: 1.5rem; min-height: 360px; }
+.workspace-sidebar { width: 200px; flex-shrink: 0; border-right: 1px solid var(--border); padding-right: 1rem; }
+.workspace-page-list { list-style: none; padding: 0; margin: 0; }
+.workspace-page-item { padding: 0.5rem 0.75rem; border-radius: var(--radius-sm); cursor: pointer; font-size: 0.9375rem; color: var(--text-secondary); }
+.workspace-page-item:hover { background: var(--accent-muted); color: var(--text); }
+.workspace-page-item.active { background: var(--accent-muted); color: var(--text); }
+.workspace-page-item.empty { color: var(--text-tertiary); cursor: default; }
+.workspace-editor-wrap { flex: 1; min-width: 0; }
+.workspace-empty { padding: 2rem; color: var(--text-tertiary); text-align: center; }
+.workspace-title-input { font-size: 1.25rem; font-weight: 600; margin-bottom: 0.75rem; }
+.workspace-body-input { min-height: 280px; font-family: inherit; resize: vertical; }
+.workspace-editor-actions { margin-top: 1rem; display: flex; gap: 0.5rem; }
+
+/* Flowcharts */
+.flowcharts-toolbar { margin-bottom: 1rem; }
+.flowcharts-layout { display: flex; gap: 1.5rem; min-height: 400px; }
+.flowcharts-sidebar { width: 200px; flex-shrink: 0; border-right: 1px solid var(--border); padding-right: 1rem; }
+.flowchart-list { list-style: none; padding: 0; margin: 0; }
+.flowchart-item { padding: 0.5rem 0.75rem; border-radius: var(--radius-sm); cursor: pointer; font-size: 0.9375rem; color: var(--text-secondary); }
+.flowchart-item:hover { background: var(--accent-muted); color: var(--text); }
+.flowchart-item.active { background: var(--accent-muted); color: var(--text); }
+.flowchart-item.empty { color: var(--text-tertiary); cursor: default; }
+.flowcharts-editor-wrap { flex: 1; min-width: 0; }
+.flowchart-empty { padding: 2rem; color: var(--text-tertiary); text-align: center; }
+.flowchart-title-input { margin-bottom: 0.75rem; }
+.flowchart-split { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+.flowchart-source-wrap .textarea, .flowchart-preview-wrap { min-height: 260px; }
+.flowchart-mermaid-input { font-family: ui-monospace, monospace; font-size: 0.8125rem; resize: vertical; }
+.flowchart-preview { background: var(--bg-panel); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 1rem; min-height: 260px; }
+.flowchart-preview .mermaid { display: flex; justify-content: center; align-items: center; }
+.label-sm { display: block; margin-bottom: 0.35rem; font-size: 0.8125rem; color: var(--text-secondary); }
+.flowchart-actions { margin-top: 1rem; display: flex; gap: 0.5rem; }
 
 /* Full notes page */
 .notes-list { list-style: none; padding: 0; margin: 0; }

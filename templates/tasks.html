@@ -3,13 +3,13 @@
 {% block content %}
 <div class="page-header">
   <h1>Tasks</h1>
-  <p class="subtitle">Task manager — assign, set due date and urgency</p>
+  <p class="subtitle">Task manager — assign to one or more team members (comma-separated emails), set due date and urgency</p>
 </div>
 <section class="section">
   <div class="card tasks-card">
     <form id="task-form" class="task-form-add">
       <input type="text" id="task-input" class="input" placeholder="New task…" required>
-      <input type="text" id="task-assignee" class="input input-sm" placeholder="Assign to (email)" title="Assignee email">
+      <input type="text" id="task-assignee" class="input input-sm" placeholder="Assign to (emails, comma-separated)" title="One or more assignees">
       <input type="text" id="task-due" class="input input-sm" placeholder="Due date (e.g. 2025-02-15)" title="Due date">
       <select id="task-urgency" class="input input-sm" title="Urgency">
         <option value="normal">Normal</option>

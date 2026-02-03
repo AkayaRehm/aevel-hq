@@ -412,6 +412,28 @@ def api_admin_email_settings_update():
     return jsonify(get_email_settings())
 
 
+# Send one email now to that type's recipients (admin)
+SEND_NOW_DEFAULTS = {
+    "task_assigned": ("Task assigned (test)", "<p>This is a test email for <strong>Task assigned</strong>. You received it because an admin clicked Send now.</p>"),
+    "due_soon": ("Due soon reminder (test)", "<p>This is a test <strong>Due soon</strong> reminder. Tasks due soon would be listed here.</p>"),
+    "digest": ("Aevel digest (test)", "<p>This is a test <strong>Digest</strong> email. A real digest would include task and activity summary.</p>"),
+}
+
+
+@app.route("/api/admin/send-now", methods=["POST"])
+@admin_required
+def api_admin_send_now():
+    data = request.get_json(silent=True) or {}
+    email_type = (data.get("email_type") or "").strip()
+    if not email_type or email_type not in SEND_NOW_DEFAULTS:
+        return jsonify({"error": "email_type required (task_assigned, due_soon, or digest)"}), 400
+    subj, body = SEND_NOW_DEFAULTS.get(email_type, ("Test", "<p>Test email.</p>"))
+    subject = data.get("subject") or subj
+    body_html = data.get("body") or body
+    ok = send_app_email(email_type, subject, body_html, to_emails=None)
+    return jsonify({"ok": ok, "message": "Sent." if ok else "Not sent (check enabled + recipients)."}), 200
+
+
 @app.route("/", methods=["GET"])
 def index():
     if "user_id" in session:
@@ -477,6 +499,200 @@ def integrations_page():
 @login_required
 def settings_page():
     return render_template("settings.html")
+
+
+@app.route("/workspace", methods=["GET"])
+@login_required
+def workspace_page():
+    return render_template("workspace.html")
+
+
+@app.route("/flowcharts", methods=["GET"])
+@login_required
+def flowcharts_page():
+    return render_template("flowcharts.html")
+
+
+# — API: workspace pages (team-wide collab, Notion-like)
+@app.route("/api/workspace", methods=["GET"])
+@login_required
+def api_workspace_list():
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT id, title, body, created_at, updated_at FROM workspace_pages ORDER BY updated_at DESC"
+    ).fetchall()
+    conn.close()
+    pages = [
+        {
+            "id": r["id"],
+            "title": r["title"] or "",
+            "body": r["body"] or "",
+            "created_at": r["created_at"],
+            "updated_at": r["updated_at"],
+        }
+        for r in rows
+    ]
+    return jsonify({"pages": pages})
+
+
+@app.route("/api/workspace", methods=["POST"])
+@login_required
+def api_workspace_create():
+    data = request.get_json(silent=True) or {}
+    title = (data.get("title") or "Untitled").strip() or "Untitled"
+    body = (data.get("body") or "").strip()
+    page_id = str(uuid.uuid4())
+    user_id = get_user_id()
+    conn = get_db()
+    conn.execute(
+        "INSERT INTO workspace_pages (id, user_id, title, body) VALUES (?, ?, ?, ?)",
+        (page_id, user_id, title, body),
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({"id": page_id, "title": title, "body": body}), 201
+
+
+@app.route("/api/workspace/<pid>", methods=["GET"])
+@login_required
+def api_workspace_get(pid):
+    conn = get_db()
+    row = conn.execute(
+        "SELECT id, title, body, created_at, updated_at FROM workspace_pages WHERE id = ?", (pid,)
+    ).fetchone()
+    conn.close()
+    if not row:
+        return jsonify({"error": "not found"}), 404
+    return jsonify(dict(row))
+
+
+@app.route("/api/workspace/<pid>", methods=["PATCH"])
+@login_required
+def api_workspace_update(pid):
+    data = request.get_json(silent=True) or {}
+    conn = get_db()
+    row = conn.execute("SELECT id FROM workspace_pages WHERE id = ?", (pid,)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"error": "not found"}), 404
+    if "title" in data:
+        title = (str(data["title"]) or "").strip() or "Untitled"
+        conn.execute(
+            "UPDATE workspace_pages SET title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (title, pid),
+        )
+    if "body" in data:
+        conn.execute(
+            "UPDATE workspace_pages SET body = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (data.get("body") or "", pid),
+        )
+    conn.commit()
+    row = conn.execute(
+        "SELECT id, title, body, created_at, updated_at FROM workspace_pages WHERE id = ?", (pid,)
+    ).fetchone()
+    conn.close()
+    return jsonify(dict(row))
+
+
+@app.route("/api/workspace/<pid>", methods=["DELETE"])
+@login_required
+def api_workspace_delete(pid):
+    conn = get_db()
+    conn.execute("DELETE FROM workspace_pages WHERE id = ?", (pid,))
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True}), 200
+
+
+# — API: flowcharts (team-wide)
+@app.route("/api/flowcharts", methods=["GET"])
+@login_required
+def api_flowcharts_list():
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT id, title, mermaid_text, created_at, updated_at FROM flowcharts ORDER BY updated_at DESC"
+    ).fetchall()
+    conn.close()
+    items = [
+        {
+            "id": r["id"],
+            "title": r["title"] or "",
+            "mermaid_text": r["mermaid_text"] or "",
+            "created_at": r["created_at"],
+            "updated_at": r["updated_at"],
+        }
+        for r in rows
+    ]
+    return jsonify({"flowcharts": items})
+
+
+@app.route("/api/flowcharts", methods=["POST"])
+@login_required
+def api_flowcharts_create():
+    data = request.get_json(silent=True) or {}
+    title = (data.get("title") or "Untitled flowchart").strip() or "Untitled flowchart"
+    mermaid_text = (data.get("mermaid_text") or "").strip()
+    fc_id = str(uuid.uuid4())
+    user_id = get_user_id()
+    conn = get_db()
+    conn.execute(
+        "INSERT INTO flowcharts (id, user_id, title, mermaid_text) VALUES (?, ?, ?, ?)",
+        (fc_id, user_id, title, mermaid_text),
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({"id": fc_id, "title": title, "mermaid_text": mermaid_text}), 201
+
+
+@app.route("/api/flowcharts/<fid>", methods=["GET"])
+@login_required
+def api_flowcharts_get(fid):
+    conn = get_db()
+    row = conn.execute(
+        "SELECT id, title, mermaid_text, created_at, updated_at FROM flowcharts WHERE id = ?", (fid,)
+    ).fetchone()
+    conn.close()
+    if not row:
+        return jsonify({"error": "not found"}), 404
+    return jsonify(dict(row))
+
+
+@app.route("/api/flowcharts/<fid>", methods=["PATCH"])
+@login_required
+def api_flowcharts_update(fid):
+    data = request.get_json(silent=True) or {}
+    conn = get_db()
+    row = conn.execute("SELECT id FROM flowcharts WHERE id = ?", (fid,)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"error": "not found"}), 404
+    if "title" in data:
+        title = (str(data["title"]) or "").strip() or "Untitled flowchart"
+        conn.execute(
+            "UPDATE flowcharts SET title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (title, fid),
+        )
+    if "mermaid_text" in data:
+        conn.execute(
+            "UPDATE flowcharts SET mermaid_text = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (data.get("mermaid_text") or "", fid),
+        )
+    conn.commit()
+    row = conn.execute(
+        "SELECT id, title, mermaid_text, created_at, updated_at FROM flowcharts WHERE id = ?", (fid,)
+    ).fetchone()
+    conn.close()
+    return jsonify(dict(row))
+
+
+@app.route("/api/flowcharts/<fid>", methods=["DELETE"])
+@login_required
+def api_flowcharts_delete(fid):
+    conn = get_db()
+    conn.execute("DELETE FROM flowcharts WHERE id = ?", (fid,))
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True}), 200
 
 
 # — API: user preferences (customization)
@@ -587,7 +803,11 @@ def api_tasks_create():
     if not text:
         return jsonify({"error": "text required"}), 400
     task_id = str(uuid.uuid4())
-    assigned_to = (data.get("assigned_to") or "").strip()
+    assigned_raw = data.get("assigned_to")
+    if isinstance(assigned_raw, list):
+        assigned_to = ",".join(str(e).strip() for e in assigned_raw if str(e).strip())
+    else:
+        assigned_to = (assigned_raw or "").strip()
     due_date = (data.get("due_date") or "").strip()
     urgency = (data.get("urgency") or "normal").strip() or "normal"
     conn = get_db()
@@ -598,11 +818,12 @@ def api_tasks_create():
     conn.commit()
     conn.close()
     if assigned_to:
+        emails = [e.strip() for e in assigned_to.split(",") if e.strip()]
         send_app_email(
             "task_assigned",
             "Task assigned: " + text[:50],
             f"<p>You were assigned a task:</p><p><strong>{text}</strong></p><p>Urgency: {urgency}</p><p>Due: {due_date or 'Not set'}</p>",
-            to_emails=[assigned_to],
+            to_emails=emails,
         )
     return jsonify({"id": task_id, "text": text, "done": False, "assigned_to": assigned_to, "due_date": due_date, "urgency": urgency}), 201
 
@@ -627,15 +848,20 @@ def api_tasks_update(tid):
             conn.execute("UPDATE tasks SET text = ? WHERE id = ? AND user_id = ?", (text, tid, user_id))
             row["text"] = text
     if "assigned_to" in data:
-        assigned_to = (data.get("assigned_to") or "").strip()
+        assigned_raw = data.get("assigned_to")
+        if isinstance(assigned_raw, list):
+            assigned_to = ",".join(str(e).strip() for e in assigned_raw if str(e).strip())
+        else:
+            assigned_to = (assigned_raw or "").strip()
         conn.execute("UPDATE tasks SET assigned_to = ? WHERE id = ? AND user_id = ?", (assigned_to, tid, user_id))
         row["assigned_to"] = assigned_to
         if assigned_to and assigned_to != prev_assigned:
+            emails = [e.strip() for e in assigned_to.split(",") if e.strip()]
             send_app_email(
                 "task_assigned",
                 "Task assigned: " + (row.get("text") or "")[:50],
                 f"<p>You were assigned a task:</p><p><strong>{row.get('text', '')}</strong></p><p>Urgency: {row.get('urgency') or 'normal'}</p><p>Due: {row.get('due_date') or 'Not set'}</p>",
-                to_emails=[assigned_to],
+                to_emails=emails,
             )
     if "due_date" in data:
         due_date = (str(data["due_date"]) or "").strip()
