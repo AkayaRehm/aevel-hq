@@ -20,10 +20,14 @@
     </form>
     <div id="task-batch-bar" class="task-batch-bar hidden">
       <span class="task-batch-count"></span>
+      <button type="button" id="task-batch-complete" class="btn btn-small btn-secondary">Complete selected</button>
       <button type="button" id="task-batch-delete" class="btn btn-small btn-danger">Delete selected</button>
       <button type="button" id="task-batch-cancel" class="btn btn-small btn-ghost">Cancel</button>
     </div>
-    <ul id="task-list" class="task-list"></ul>
+    <div id="task-list-container">
+      <div class="task-list-skeleton" id="task-list-skeleton"></div>
+      <div id="task-groups"></div>
+    </div>
   </div>
 </section>
 {% endblock %}

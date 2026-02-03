@@ -413,12 +413,27 @@ body {
   border: none;
 }
 .cal-cell.other { color: var(--text-tertiary); opacity: 0.6; }
-.cal-cell[data-date]:not(.head) { cursor: pointer; }
+.cal-cell[data-date]:not(.head) { cursor: pointer; outline: none; }
 .cal-cell[data-date]:not(.head):hover { background: var(--bg-hover); border-color: var(--border-strong); }
+.cal-cell[data-date]:not(.head):focus-visible { box-shadow: 0 0 0 2px var(--border-strong); }
+.cal-cell[data-date]:not(.head):active { background: var(--accent-muted); }
+.cal-cell.cal-drag-over { background: var(--accent-muted); border-color: var(--border-strong); }
 .cal-cell.today { border-color: var(--border-strong); background: var(--accent-muted); color: var(--text); font-weight: var(--weight-medium); }
 .cal-cell.has-event { border-left: 3px solid var(--success); }
+.cal-cell { min-height: 72px; }
 .cal-cell .cal-cell-day { display: block; font-weight: var(--weight-medium); }
-.cal-cell .cal-cell-event { display: block; font-size: 11px; color: var(--text-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+.cal-cell .cal-cell-allday { display: block; font-size: 9px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-tertiary); margin-top: 1px; }
+.cal-cell-events { margin-top: 4px; display: flex; flex-direction: column; gap: 2px; }
+.cal-cell-event { display: block; font-size: 10px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 1px 4px; border-radius: 3px; background: var(--bg-overlay); }
+.cal-cell-event-draggable { cursor: grab; }
+.cal-cell-event-draggable:active { cursor: grabbing; }
+.cal-cell-event-draggable:hover { background: var(--bg-hover); }
+.cal-cell-event.cal-dragging { opacity: 0.5; }
+.cal-cell-more { font-size: 9px; color: var(--text-tertiary); }
+.events-list .event-list-item-draggable { cursor: grab; }
+.events-list .event-list-item-draggable.cal-dragging { opacity: 0.5; }
+.events-list .event-list-item-draggable:active { cursor: grabbing; }
+.events-list .event-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-tertiary); margin-right: 6px; }
 .calendar-form-wrap, .events-list-wrap {
   margin-top: var(--space-6);
   padding: var(--space-5);

@@ -981,6 +981,8 @@ def api_preferences_update():
                 prefs[k] = bool(data[k])
             elif k.startswith("dashboard_"):
                 prefs[k] = bool(data[k])
+    if "task_order" in data and isinstance(data["task_order"], list):
+        prefs["task_order"] = [str(x) for x in data["task_order"] if x][:500]
     conn = None
     try:
         conn = get_db()
@@ -1028,6 +1030,25 @@ def api_dashboard_stats():
         "SELECT COUNT(*) as c FROM events WHERE user_id = ? AND date >= ? AND date <= ?",
         (user_id, today, week_later),
     ).fetchone()["c"]
+    # Activity this week vs last week (for comparison)
+    week_ago = (datetime.utcnow().date() - timedelta(days=7)).isoformat()
+    activity_this_week = conn.execute(
+        "SELECT COUNT(*) as c FROM activity_log WHERE user_id = ? AND date(created_at) >= ?",
+        (user_id, today),
+    ).fetchone()["c"]
+    activity_last_week = conn.execute(
+        "SELECT COUNT(*) as c FROM activity_log WHERE user_id = ? AND date(created_at) >= ? AND date(created_at) < ?",
+        (user_id, week_ago, today),
+    ).fetchone()["c"]
+    # Last 7 days counts for sparkline (oldest to newest)
+    last_7_days = []
+    for i in range(6, -1, -1):
+        d = (datetime.utcnow().date() - timedelta(days=i)).isoformat()
+        c = conn.execute(
+            "SELECT COUNT(*) as c FROM activity_log WHERE user_id = ? AND date(created_at) = ?",
+            (user_id, d),
+        ).fetchone()["c"]
+        last_7_days.append(c)
     conn.close()
     return jsonify({
         "tasks_total": tasks,
@@ -1036,6 +1057,9 @@ def api_dashboard_stats():
         "events_count": events,
         "tasks_due_soon": tasks_due_soon,
         "events_this_week": events_this_week,
+        "activity_this_week": activity_this_week,
+        "activity_last_week": activity_last_week,
+        "last_7_days": last_7_days,
     })
 
 

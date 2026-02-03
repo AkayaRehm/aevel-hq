@@ -39,16 +39,17 @@
     var daysInMonth = last.getDate();
     loadEvents().then(function(events) {
       if (!events) events = [];
-      var eventDates = {};
-      var eventTitles = {};
+      var eventByDate = {};
+      var eventIdsByDate = {};
       events.forEach(function(ev) {
         var d = ev.date;
         if (d) {
-          eventDates[d] = (eventDates[d] || 0) + 1;
-          if (!eventTitles[d]) eventTitles[d] = [];
-          eventTitles[d].push((ev.title || '').replace(/</g, '&lt;'));
+          if (!eventByDate[d]) eventByDate[d] = [];
+          eventByDate[d].push({ id: ev.id, title: (ev.title || '').replace(/</g, '&lt;') });
+          eventIdsByDate[d] = (eventIdsByDate[d] || 0) + 1;
         }
       });
+      var maxVisible = 4;
       var html = '';
       var dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
       dayNames.forEach(function(d) { html += '<div class="cal-cell head">' + d + '</div>'; });
@@ -60,11 +61,17 @@
       }
       for (var d = 1; d <= daysInMonth; d++) {
         var dateStr = y + '-' + String(m + 1).padStart(2, '0') + '-' + String(d).padStart(2, '0');
-        var hasEvent = eventDates[dateStr];
+        var dayEvents = eventByDate[dateStr] || [];
         var isToday = dateStr === todayStr;
-        var cls = 'cal-cell' + (hasEvent ? ' has-event' : '') + (isToday ? ' today' : '');
-        var titles = (eventTitles[dateStr] || []).slice(0, 2).map(function(t) { return '<span class="cal-cell-event">' + t + '</span>'; }).join('');
-        html += '<div class="' + cls + '" data-date="' + dateStr + '"><span class="cal-cell-day">' + d + '</span>' + titles + '</div>';
+        var cls = 'cal-cell' + (dayEvents.length ? ' has-event' : '') + (isToday ? ' today' : '') + ' cal-cell-droppable';
+        var eventsHtml = '';
+        dayEvents.slice(0, maxVisible).forEach(function(ev) {
+          eventsHtml += '<span class="cal-cell-event cal-cell-event-draggable" data-event-id="' + ev.id + '" data-event-date="' + dateStr + '" draggable="true" title="Drag to move">' + ev.title + '</span>';
+        });
+        if (dayEvents.length > maxVisible) {
+          eventsHtml += '<span class="cal-cell-event cal-cell-more">+' + (dayEvents.length - maxVisible) + '</span>';
+        }
+        html += '<div class="' + cls + '" data-date="' + dateStr + '" tabindex="0"><span class="cal-cell-day">' + d + '</span><span class="cal-cell-allday">All day</span><div class="cal-cell-events">' + eventsHtml + '</div></div>';
       }
       var total = pad + daysInMonth;
       var rest = total % 7 ? 7 - (total % 7) : 0;
@@ -72,8 +79,39 @@
         html += '<div class="cal-cell other">' + (j + 1) + '</div>';
       }
       gridEl.innerHTML = html;
-      gridEl.querySelectorAll('.cal-cell[data-date]').forEach(function(cell) {
-        cell.addEventListener('click', function() {
+      var draggedEventId = null;
+      gridEl.querySelectorAll('.cal-cell-event-draggable').forEach(function(span) {
+        span.addEventListener('dragstart', function(e) {
+          draggedEventId = this.getAttribute('data-event-id');
+          e.dataTransfer.setData('text/plain', draggedEventId);
+          e.dataTransfer.effectAllowed = 'move';
+          this.classList.add('cal-dragging');
+        });
+        span.addEventListener('dragend', function() {
+          this.classList.remove('cal-dragging');
+          gridEl.querySelectorAll('.cal-cell-droppable').forEach(function(c) { c.classList.remove('cal-drag-over'); });
+        });
+      });
+      gridEl.querySelectorAll('.cal-cell-droppable').forEach(function(cell) {
+        cell.addEventListener('dragover', function(e) {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+          this.classList.add('cal-drag-over');
+        });
+        cell.addEventListener('dragleave', function() { this.classList.remove('cal-drag-over'); });
+        cell.addEventListener('drop', function(e) {
+          e.preventDefault();
+          this.classList.remove('cal-drag-over');
+          var eventId = e.dataTransfer.getData('text/plain');
+          var newDate = this.getAttribute('data-date');
+          if (!eventId || !newDate) return;
+          api('PATCH', '/api/events/' + eventId, { date: newDate }).then(function(data) {
+            renderCalendar();
+            if (typeof Aevel !== 'undefined' && Aevel.toast) Aevel.toast('Event moved', 'success');
+          }).catch(function() {});
+        });
+        cell.addEventListener('click', function(e) {
+          if (e.target.classList.contains('cal-cell-event-draggable')) return;
           var date = this.getAttribute('data-date');
           if (date && calDateInput) {
             calDateInput.value = date;
@@ -100,8 +138,8 @@
     if (q) inMonth = inMonth.filter(function(e) { return (e.title || '').toLowerCase().indexOf(q) !== -1; });
     eventsListEl.innerHTML = inMonth.length ? inMonth.map(function(ev) {
       var escapedTitle = (ev.title || '').replace(/</g, '&lt;');
-      return '<li class="event-list-item" data-id="' + (ev.id || '') + '" data-date="' + (ev.date || '') + '" data-title="' + escapedTitle + '">' +
-        '<span class="event-date">' + (ev.date || '') + '</span><span class="event-title">' + escapedTitle + '</span>' +
+      return '<li class="event-list-item event-list-item-draggable" data-id="' + (ev.id || '') + '" data-date="' + (ev.date || '') + '" data-title="' + escapedTitle + '" draggable="true">' +
+        '<span class="event-date">' + (ev.date || '') + '</span><span class="event-label">All day</span><span class="event-title">' + escapedTitle + '</span>' +
         '<div class="event-actions"><button type="button" class="btn btn-small btn-ghost event-edit" aria-label="Edit event">Edit</button>' +
         '<button type="button" class="btn btn-small btn-danger event-delete" data-id="' + (ev.id || '') + '" aria-label="Delete event">Delete</button></div></li>';
     }).join('') : '<li class="empty-state"><p class="empty-state__title">' + (eventFilterQuery ? 'No matching events' : 'No events this month') + '</p><p>Click a day above and add an event.</p></li>';
@@ -152,6 +190,17 @@
           next.remove();
           li.classList.remove('hidden');
         });
+      });
+    });
+    eventsListEl.querySelectorAll('.event-list-item-draggable').forEach(function(li) {
+      li.addEventListener('dragstart', function(e) {
+        e.dataTransfer.setData('text/plain', this.getAttribute('data-id'));
+        e.dataTransfer.effectAllowed = 'move';
+        this.classList.add('cal-dragging');
+      });
+      li.addEventListener('dragend', function() {
+        this.classList.remove('cal-dragging');
+        if (gridEl) gridEl.querySelectorAll('.cal-cell-droppable').forEach(function(c) { c.classList.remove('cal-drag-over'); });
       });
     });
   }
