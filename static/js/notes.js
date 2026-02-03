@@ -9,7 +9,10 @@
   }
 
   function loadNotes() {
-    return api('GET', '/api/notes').then(function(data) { return data.notes || []; });
+    return api('GET', '/api/notes').then(function(data) { return data.notes || []; }).catch(function() {
+      if (typeof Aevel !== 'undefined' && Aevel.toast) Aevel.toast('Failed to load notes', 'error');
+      return [];
+    });
   }
 
   function render(notes) {

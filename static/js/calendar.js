@@ -38,6 +38,7 @@
     var startDay = first.getDay();
     var daysInMonth = last.getDate();
     loadEvents().then(function(events) {
+      if (!events) events = [];
       var eventDates = {};
       var eventTitles = {};
       events.forEach(function(ev) {
@@ -81,6 +82,10 @@
         });
       });
       renderEventsList(events, y, m);
+    }).catch(function() {
+      if (gridEl) gridEl.innerHTML = '';
+      if (eventsListEl) eventsListEl.innerHTML = '<li class="empty-state"><p class="empty-state__title">Failed to load events</p></li>';
+      if (typeof Aevel !== 'undefined' && Aevel.toast) Aevel.toast('Failed to load events', 'error');
     });
   }
 

@@ -1,6 +1,11 @@
 (function() {
   function api(method, path) {
-    return fetch(path, { method: method, credentials: 'same-origin', headers: { 'Content-Type': 'application/json' } }).then(function(r) { return r.json(); });
+    if (typeof Aevel !== 'undefined' && Aevel.api) {
+      return Aevel.api(method, path);
+    }
+    return fetch(path, { method: method, credentials: 'same-origin', headers: { 'Content-Type': 'application/json' } }).then(function(r) {
+      return r.json().then(function(data) { if (!r.ok) throw new Error((data && data.error) || 'Request failed'); return data; });
+    });
   }
 
   function esc(s) { return (s || '').replace(/</g, '&lt;').replace(/"/g, '&quot;'); }
@@ -27,6 +32,10 @@
           '<span class="team-task-urgency task-urgency-' + urg + '">' + urgencyLabel(urg) + '</span>' +
           '</div></div></li>';
       }).join('') : '<li class="empty-state"><p class="empty-state__title">No team tasks yet</p><p>Add tasks in the Tasks page — they’ll show here for the whole team.</p></li>';
+    }).catch(function() {
+      var list = document.getElementById('team-tasks-list');
+      if (list) list.innerHTML = '<li class="empty-state"><p class="empty-state__title">Failed to load</p></li>';
+      if (typeof Aevel !== 'undefined' && Aevel.toast) Aevel.toast('Failed to load team tasks', 'error');
     });
   }
 

@@ -1,11 +1,19 @@
 (function() {
   function api(method, path, body) {
+    if (typeof Aevel !== 'undefined' && Aevel.api) {
+      return Aevel.api(method, path, body);
+    }
     var opts = { method: method, credentials: 'same-origin', headers: {} };
     if (body !== undefined) {
       opts.headers['Content-Type'] = 'application/json';
       opts.body = JSON.stringify(body);
     }
-    return fetch(path, opts).then(function(r) { return r.json(); });
+    return fetch(path, opts).then(function(r) {
+      return r.json().then(function(data) {
+        if (!r.ok) throw new Error((data && data.error) || 'Request failed');
+        return data;
+      });
+    });
   }
 
   function esc(s) { return (s || '').replace(/</g, '&lt;').replace(/"/g, '&quot;'); }
@@ -43,6 +51,11 @@
         });
       });
       return notes;
+    }).catch(function() {
+      var list = document.getElementById('community-notes-list');
+      if (list) list.innerHTML = '<li class="empty-state"><p class="empty-state__title">Failed to load</p></li>';
+      if (typeof Aevel !== 'undefined' && Aevel.toast) Aevel.toast('Failed to load notes', 'error');
+      return [];
     });
   }
 

@@ -4,6 +4,11 @@
 <div class="page-header">
   <h1>Admin — Email controls</h1>
   <p class="text-secondary">From {{ zoho_email }}. Configure types and recipients.</p>
+  {% if not zoho_password_configured %}
+  <p class="text-secondary" style="margin-top:0.5rem; color: var(--color-warning, #c9a227);">ZOHO_PASSWORD is not set. Set it in your environment (use an <a href="https://accounts.zoho.com/home#security/app_passwords" target="_blank" rel="noopener">App Password</a> if you use 2FA).</p>
+  {% else %}
+  <p class="text-secondary" style="margin-top:0.25rem; font-size:0.875rem;">If you see “535 Authentication failed”, use an <a href="https://accounts.zoho.com/home#security/app_passwords" target="_blank" rel="noopener">App Password</a> from Zoho (not your normal password).</p>
+  {% endif %}
   <form method="POST" action="{{ url_for('admin_logout') }}" style="margin-top:0.5rem;">
     <button type="submit" class="btn btn-secondary">Exit admin</button>
   </form>
@@ -91,15 +96,21 @@
               body: JSON.stringify({ email_type: type })
             }).then(function(r) { return r.json(); }).then(function(res) {
               statusEl.textContent = res.message || (res.ok ? 'Sent.' : 'Not sent.');
-              setTimeout(function() { statusEl.textContent = ''; }, 3000);
-            }).catch(function() {
-              statusEl.textContent = 'Send failed.';
+              statusEl.className = res.ok ? 'text-secondary' : 'text-secondary';
+              statusEl.style.color = res.ok ? '' : 'var(--color-danger, #c0392b)';
+              setTimeout(function() { statusEl.textContent = ''; statusEl.style.color = ''; }, 6000);
+            }).catch(function(err) {
+              statusEl.textContent = 'Request failed. Check console.';
+              statusEl.style.color = 'var(--color-danger, #c0392b)';
             }).finally(function() {
               btn.disabled = false;
               btn.textContent = 'Send now';
             });
           });
         });
+      })
+      .catch(function() {
+        if (container) container.innerHTML = '<p class="text-secondary">Failed to load email settings.</p>';
       });
   }
 
@@ -148,13 +159,16 @@
       body: JSON.stringify({ email: email, subject: subject, body: body })
     }).then(function(r) { return r.json(); }).then(function(res) {
       statusEl.textContent = res.message || (res.ok ? 'Sent.' : 'Failed.');
+      statusEl.style.color = res.ok ? '' : 'var(--color-danger, #c0392b)';
       if (res.ok) {
         emailEl.value = '';
         bodyEl.value = '';
         subjectEl.value = '';
       }
+      setTimeout(function() { statusEl.textContent = ''; statusEl.style.color = ''; }, 8000);
     }).catch(function() {
-      statusEl.textContent = 'Send failed.';
+      statusEl.textContent = 'Request failed. Check network.';
+      statusEl.style.color = 'var(--color-danger, #c0392b)';
     }).finally(function() {
       document.getElementById('admin-custom-send').disabled = false;
     });

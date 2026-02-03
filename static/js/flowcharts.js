@@ -75,7 +75,7 @@
       mermaidInput.value = f.mermaid_text || '';
       loadList();
       schedulePreview();
-    });
+    }).catch(function() {});
   }
 
   function showEmpty() {

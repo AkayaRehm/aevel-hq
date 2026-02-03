@@ -243,13 +243,14 @@ def get_email_settings():
 
 
 def send_app_email(email_type, subject, body_html_or_text, to_emails=None):
-    """Send email via Zoho if this type is enabled and recipients exist. Uses admin list; if to_emails given (e.g. assignee), merges with admin list."""
+    """Send email via Zoho if this type is enabled and recipients exist. Uses admin list; if to_emails given (e.g. assignee), merges with admin list.
+    Returns (True, None) on success, (False, None) when skipped (not configured/enabled/recipients), (False, error_message) on SMTP failure."""
     if not mail or not ZOHO_PASSWORD:
-        return False
+        return (False, None)
     settings = get_email_settings()
     conf = settings.get(email_type, {})
     if not conf.get("enabled"):
-        return False
+        return (False, None)
     admin_list = conf.get("recipients") or []
     if isinstance(admin_list, str):
         admin_list = [e.strip() for e in admin_list.split(",") if e.strip()]
@@ -259,7 +260,7 @@ def send_app_email(email_type, subject, body_html_or_text, to_emails=None):
     else:
         recipients = admin_list
     if not recipients:
-        return False
+        return (False, None)
     try:
         from flask_mail import Message
         msg = Message(subject=subject, recipients=recipients, body=body_html_or_text)
@@ -268,10 +269,11 @@ def send_app_email(email_type, subject, body_html_or_text, to_emails=None):
             msg.body = body_html_or_text.replace("<br>", "\n").replace("</p>", "\n")
         mail.send(msg)
         log_activity(None, "email_sent", details={"email_type": email_type, "ok": True})
-        return True
+        return (True, None)
     except Exception as e:
-        log_activity(None, "email_sent", details={"email_type": email_type, "ok": False, "error": str(e)})
-        return False
+        err_msg = str(e).strip() or "Unknown error"
+        log_activity(None, "email_sent", details={"email_type": email_type, "ok": False, "error": err_msg})
+        return (False, err_msg)
 
 
 def run_pipeline():
@@ -406,7 +408,11 @@ def admin_page():
             return redirect(url_for("admin_page"))
         flash("Invalid admin password", "error")
     if session.get("admin"):
-        return render_template("admin.html", zoho_email=ZOHO_EMAIL)
+        return render_template(
+            "admin.html",
+            zoho_email=ZOHO_EMAIL,
+            zoho_password_configured=bool(ZOHO_PASSWORD),
+        )
     return render_template("admin_login.html")
 
 
@@ -471,9 +477,13 @@ def api_admin_send_now():
     subj, body = SEND_NOW_DEFAULTS.get(email_type, ("Test", "<p>Test email.</p>"))
     subject = data.get("subject") or subj
     body_html = data.get("body") or body
-    ok = send_app_email(email_type, subject, body_html, to_emails=None)
+    ok, err = send_app_email(email_type, subject, body_html, to_emails=None)
     log_activity(get_user_id(), "admin_send_now", resource_type="email", details={"email_type": email_type, "ok": ok})
-    return jsonify({"ok": ok, "message": "Sent." if ok else "Not sent (check enabled + recipients)."}), 200
+    if ok:
+        return jsonify({"ok": True, "message": "Sent."}), 200
+    if err:
+        return jsonify({"ok": False, "message": "Send failed: " + err}), 200
+    return jsonify({"ok": False, "message": "Not sent (enable this type and add recipients)."}), 200
 
 
 @app.route("/api/admin/send-custom", methods=["POST"])
@@ -1073,12 +1083,12 @@ def api_tasks_create():
     log_activity(user_id, "task_create", "task", task_id)
     if assigned_to:
         emails = [e.strip() for e in assigned_to.split(",") if e.strip()]
-        send_app_email(
+        send_app_email(  # returns (ok, err); we don't surface err to user here
             "task_assigned",
             "Task assigned: " + text[:50],
             f"<p>You were assigned a task:</p><p><strong>{text}</strong></p><p>Urgency: {urgency}</p><p>Due: {due_date or 'Not set'}</p>",
             to_emails=emails,
-        )
+        )  # (ok, err) ignored
     return jsonify({"id": task_id, "text": text, "done": False, "assigned_to": assigned_to, "due_date": due_date, "urgency": urgency}), 201
 
 
@@ -1111,7 +1121,7 @@ def api_tasks_update(tid):
         row["assigned_to"] = assigned_to
         if assigned_to and assigned_to != prev_assigned:
             emails = [e.strip() for e in assigned_to.split(",") if e.strip()]
-            send_app_email(
+            send_app_email(  # (ok, err) ignored
                 "task_assigned",
                 "Task assigned: " + (row.get("text") or "")[:50],
                 f"<p>You were assigned a task:</p><p><strong>{row.get('text', '')}</strong></p><p>Urgency: {row.get('urgency') or 'normal'}</p><p>Due: {row.get('due_date') or 'Not set'}</p>",

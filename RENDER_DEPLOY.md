@@ -73,7 +73,7 @@ Click **Environment** tab and add:
 - **SECRET_KEY** — Keep your existing one (needed for sessions). Don’t add a duplicate.
 - **ADMIN_PASSWORD** — Password to access `/admin` (control which emails are sent and to whom).
 - **ZOHO_EMAIL** — `hello.aevel@zohomail.com` (sender address).
-- **ZOHO_PASSWORD** — Your Zoho Mail password (or app password if 2FA is on).
+- **ZOHO_PASSWORD** — Your Zoho Mail password. If you get “535 Authentication failed”, use an [App Password](https://accounts.zoho.com/home#security/app_passwords) from Zoho (not your normal password; required if 2FA is on).
 
 ### Optional (for full features):
 

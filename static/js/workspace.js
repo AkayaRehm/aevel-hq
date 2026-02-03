@@ -45,7 +45,7 @@
       titleInput.value = p.title || '';
       bodyInput.value = p.body || '';
       loadPages();
-    });
+    }).catch(function() {});
   }
 
   function showEmpty() {

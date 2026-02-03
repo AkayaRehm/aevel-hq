@@ -89,8 +89,9 @@
         setTimeout(function() { fb.textContent = ''; }, 3000);
       })
       .catch(function() {
-        document.getElementById('prefs-feedback').textContent = 'Failed to save.';
-        document.getElementById('prefs-feedback').style.color = 'var(--danger)';
+        var fb = document.getElementById('prefs-feedback');
+        if (fb) { fb.textContent = 'Failed to save.'; fb.style.color = 'var(--danger)'; }
+        if (typeof Aevel !== 'undefined' && Aevel.toast) Aevel.toast('Failed to save preferences', 'error');
       });
   });
   load();

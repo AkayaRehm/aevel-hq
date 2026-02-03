@@ -48,7 +48,7 @@
         var id = cb.closest('.task-item').getAttribute('data-id');
         if (!id) return;
         var item = tasks.find(function(t) { return String(t.id) === id; });
-        api('PATCH', '/api/tasks/' + id, { done: !item.done }).then(function() { loadTasks().then(render); });
+        api('PATCH', '/api/tasks/' + id, { done: !item.done }).then(function() { loadTasks().then(render); }).catch(function() {});
       });
     });
     list.querySelectorAll('.task-edit').forEach(function(btn) {
@@ -93,10 +93,10 @@
         var text = (row.querySelector('.task-text') && row.querySelector('.task-text').textContent) || 'this task';
         if (typeof Aevel !== 'undefined' && Aevel.confirm) {
           Aevel.confirm({ title: 'Delete task', body: 'Delete “‘ + text.substring(0, 40) + (text.length > 40 ? '…”' : '”') + '? This cannot be undone.', confirmLabel: 'Delete', cancelLabel: 'Cancel', danger: true }, function() {
-            api('DELETE', '/api/tasks/' + id).then(function() { loadTasks().then(render); if (Aevel.toast) Aevel.toast('Task deleted', 'success'); });
+            api('DELETE', '/api/tasks/' + id).then(function() { loadTasks().then(render); if (Aevel.toast) Aevel.toast('Task deleted', 'success'); }).catch(function() {});
           });
         } else {
-          api('DELETE', '/api/tasks/' + id).then(function() { loadTasks().then(render); });
+          api('DELETE', '/api/tasks/' + id).then(function() { loadTasks().then(render); }).catch(function() {});
         }
       });
     });
