@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Calendar{% endblock %}
+{% block content %}
+<section class="page-head">
+  <h1>Calendar</h1>
+  <p class="muted">Events and schedule</p>
+</section>
+<section class="card calendar-card">
+  <div class="calendar-toolbar">
+    <button type="button" id="cal-prev" class="btn btn-ghost">← Prev</button>
+    <h2 id="cal-title" class="cal-month-title">—</h2>
+    <button type="button" id="cal-next" class="btn btn-ghost">Next →</button>
+  </div>
+  <div id="cal-grid" class="cal-grid"></div>
+  <div class="calendar-form-wrap">
+    <h3>Add event</h3>
+    <form id="cal-form" class="form-inline">
+      <input type="date" id="cal-date" required>
+      <input type="text" id="cal-title-input" placeholder="Event title" required>
+      <button type="submit" class="btn btn-primary">Add</button>
+    </form>
+  </div>
+  <div class="events-list-wrap">
+    <h3>Events this month</h3>
+    <ul id="events-list" class="events-list"></ul>
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/calendar.js') }}"></script>
+{% endblock %}

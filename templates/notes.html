@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Notes{% endblock %}
+{% block content %}
+<section class="page-head">
+  <h1>Notes</h1>
+  <p class="muted">Notes and memos</p>
+</section>
+<section class="card notes-card">
+  <form id="note-form" class="note-form">
+    <input type="text" id="note-title" placeholder="Note title" required>
+    <textarea id="note-body" placeholder="Content…" rows="4"></textarea>
+    <button type="submit" class="btn btn-primary">Save note</button>
+  </form>
+  <ul id="notes-list" class="notes-list"></ul>
+</section>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/notes.js') }}"></script>
+{% endblock %}

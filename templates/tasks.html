@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Tasks{% endblock %}
+{% block content %}
+<section class="page-head">
+  <h1>Tasks</h1>
+  <p class="muted">Task manager</p>
+</section>
+<section class="card tasks-card">
+  <form id="task-form" class="form-inline">
+    <input type="text" id="task-input" placeholder="New task…" required>
+    <button type="submit" class="btn btn-primary">Add</button>
+  </form>
+  <ul id="task-list" class="task-list"></ul>
+</section>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/tasks.js') }}"></script>
+{% endblock %}

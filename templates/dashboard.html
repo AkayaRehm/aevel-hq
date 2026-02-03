@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<section class="page-head">
+  <h1>Dashboard</h1>
+  <p class="muted">Overview and controls</p>
+</section>
+<section class="card dashboard-card">
+  <h2>AI</h2>
+  <p class="muted">AI features are used only in the <a href="{{ url_for('ai_page') }}">AI</a> section. Use the toggle above to enable or disable AI site-wide.</p>
+  <div class="toggle-inline">
+    <label class="toggle-wrap">
+      <span class="toggle-label">AI features</span>
+      <input type="checkbox" id="ai-toggle-page" class="toggle-input" checked>
+      <span class="toggle-slider"></span>
+    </label>
+  </div>
+</section>
+<section class="card links-card">
+  <h2>Quick links</h2>
+  <ul class="link-list">
+    <li><a href="{{ url_for('calendar_page') }}">Calendar</a> — View and add events</li>
+    <li><a href="{{ url_for('tasks_page') }}">Tasks</a> — Manage your tasks</li>
+    <li><a href="{{ url_for('notes_page') }}">Notes</a> — Notes and memos</li>
+    <li><a href="{{ url_for('ai_page') }}">AI</a> — Dedicated AI area (routing and formatting only)</li>
+  </ul>
+</section>
+<section class="card status-card">
+  <h2>System</h2>
+  <p class="muted">API health</p>
+  <div id="health-status" class="status-pill">Checking…</div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+  (function() {
+    var togglePage = document.getElementById('ai-toggle-page');
+    var toggleNav = document.getElementById('ai-toggle');
+    if (togglePage && toggleNav) {
+      Dashboard.syncToggleFromStorage(togglePage);
+      Dashboard.syncToggleFromStorage(toggleNav);
+      togglePage.addEventListener('change', function() {
+        Dashboard.setAIToggle(togglePage.checked);
+        toggleNav.checked = togglePage.checked;
+      });
+    }
+    fetch('{{ url_for("health") }}')
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        var el = document.getElementById('health-status');
+        if (el) el.textContent = d.status === 'ok' ? 'OK' : 'Error';
+        if (el) el.className = 'status-pill ' + (d.status === 'ok' ? 'status-ok' : 'status-err');
+      })
+      .catch(function() {
+        var el = document.getElementById('health-status');
+        if (el) { el.textContent = 'Error'; el.className = 'status-pill status-err'; }
+      });
+  })();
+</script>
+{% endblock %}
