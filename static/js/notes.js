@@ -1,8 +1,11 @@
 (function() {
   function api(method, path, body) {
-    var opts = { method: method, headers: { 'Content-Type': 'application/json' } };
+    if (typeof Aevel !== 'undefined' && Aevel.api) {
+      return Aevel.api(method, path, body);
+    }
+    var opts = { method: method, credentials: 'same-origin', headers: { 'Content-Type': 'application/json' } };
     if (body) opts.body = JSON.stringify(body);
-    return fetch(path, opts).then(function(r) { return r.json(); });
+    return fetch(path, opts).then(function(r) { return r.json().then(function(data) { if (!r.ok) throw new Error(data.error || 'Request failed'); return data; }); });
   }
 
   function loadNotes() {
@@ -26,10 +29,10 @@
         var title = (row.querySelector('h4') && row.querySelector('h4').textContent) || 'this note';
         if (typeof Aevel !== 'undefined' && Aevel.confirm) {
           Aevel.confirm({ title: 'Delete note', body: 'Delete “‘ + title.replace(/</g, '&lt;').substring(0, 40) + (title.length > 40 ? '…”' : '”') + '? This cannot be undone.', confirmLabel: 'Delete', cancelLabel: 'Cancel', danger: true }, function() {
-            api('DELETE', '/api/notes/' + id).then(function() { loadNotes().then(render); if (Aevel.toast) Aevel.toast('Note deleted', 'success'); });
+            api('DELETE', '/api/notes/' + id).then(function() { loadNotes().then(render); if (Aevel.toast) Aevel.toast('Note deleted', 'success'); }).catch(function() {});
           });
         } else {
-          api('DELETE', '/api/notes/' + id).then(function() { loadNotes().then(render); });
+          api('DELETE', '/api/notes/' + id).then(function() { loadNotes().then(render); }).catch(function() {});
         }
       });
     });
@@ -49,7 +52,7 @@
         if (bodyEl) bodyEl.value = '';
         loadNotes().then(render);
         if (typeof Aevel !== 'undefined' && Aevel.toast) Aevel.toast('Note saved', 'success');
-      });
+      }).catch(function() {});
     });
   }
 

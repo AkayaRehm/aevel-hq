@@ -7,9 +7,12 @@
   var calDateInput = document.getElementById('cal-date');
 
   function api(method, path, body) {
-    var opts = { method: method, headers: { 'Content-Type': 'application/json' } };
+    if (typeof Aevel !== 'undefined' && Aevel.api) {
+      return Aevel.api(method, path, body);
+    }
+    var opts = { method: method, credentials: 'same-origin', headers: { 'Content-Type': 'application/json' } };
     if (body) opts.body = JSON.stringify(body);
-    return fetch(path, opts).then(function(r) { return r.json(); });
+    return fetch(path, opts).then(function(r) { return r.json().then(function(data) { if (!r.ok) throw new Error(data.error || 'Request failed'); return data; }); });
   }
 
   function toDateStr(d) {
@@ -97,10 +100,10 @@
         var label = (btn.closest('li') && btn.closest('li').querySelector('.event-title') && btn.closest('li').querySelector('.event-title').textContent) || 'this event';
         if (typeof Aevel !== 'undefined' && Aevel.confirm) {
           Aevel.confirm({ title: 'Delete event', body: 'Delete “‘ + label.substring(0, 50) + (label.length > 50 ? '…”' : '”') + '?', confirmLabel: 'Delete', cancelLabel: 'Cancel', danger: true }, function() {
-            api('DELETE', '/api/events/' + id).then(function() { renderCalendar(); if (Aevel.toast) Aevel.toast('Event deleted', 'success'); });
+            api('DELETE', '/api/events/' + id).then(function() { renderCalendar(); if (Aevel.toast) Aevel.toast('Event deleted', 'success'); }).catch(function() {});
           });
         } else {
-          api('DELETE', '/api/events/' + id).then(function() { renderCalendar(); });
+          api('DELETE', '/api/events/' + id).then(function() { renderCalendar(); }).catch(function() {});
         }
       });
     });
@@ -131,7 +134,7 @@
         if (titleEl) titleEl.value = '';
         renderCalendar();
         if (typeof Aevel !== 'undefined' && Aevel.toast) Aevel.toast('Event added', 'success');
-      });
+      }).catch(function() {});
     });
   }
 

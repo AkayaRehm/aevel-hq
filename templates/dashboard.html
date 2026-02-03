@@ -155,8 +155,10 @@
             var row = cb.closest('.task-row');
             var id = row && row.getAttribute('data-id');
             if (!id) return;
-            fetch('/api/tasks/' + id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ done: cb.checked }) })
-              .then(function() { loadWidgetTasks(); loadStats(); loadRecent(); });
+            var api = (typeof Aevel !== 'undefined' && Aevel.api) ? Aevel.api : function(method, path, body) {
+              return fetch(path, { method: method, credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) }).then(function(r) { return r.json().then(function(d) { if (!r.ok) throw new Error(d.error || 'Request failed'); return d; }); });
+            };
+            api('PATCH', '/api/tasks/' + id, { done: cb.checked }).then(function() { loadWidgetTasks(); loadStats(); loadRecent(); }).catch(function() {});
           });
         });
       })
@@ -191,16 +193,16 @@
     var input = document.getElementById('widget-task-input');
     var text = (input && input.value || '').trim();
     if (!text) return;
-    fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: text }) })
-      .then(function(r) {
-        if (r.ok) {
-          input.value = '';
-          loadWidgetTasks();
-          loadStats();
-          loadRecent();
-          if (typeof Aevel !== 'undefined' && Aevel.toast) Aevel.toast('Added', 'success');
-        }
-      });
+    var api = (typeof Aevel !== 'undefined' && Aevel.api) ? Aevel.api : function(method, path, body) {
+      return fetch(path, { method: method, credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) }).then(function(r) { return r.json().then(function(d) { if (!r.ok) throw new Error(d.error || 'Request failed'); return d; }); });
+    };
+    api('POST', '/api/tasks', { text: text }).then(function() {
+      input.value = '';
+      loadWidgetTasks();
+      loadStats();
+      loadRecent();
+      if (typeof Aevel !== 'undefined' && Aevel.toast) Aevel.toast('Added', 'success');
+    }).catch(function() {});
   });
 
   loadStats();

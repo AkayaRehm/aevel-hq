@@ -35,10 +35,10 @@
               api('DELETE', '/api/community-notes/' + id).then(function() {
                 loadNotes();
                 if (Aevel.toast) Aevel.toast('Note removed', 'success');
-              });
+              }).catch(function() {});
             });
           } else {
-            api('DELETE', '/api/community-notes/' + id).then(function() { loadNotes(); });
+            api('DELETE', '/api/community-notes/' + id).then(function() { loadNotes(); }).catch(function() {});
           }
         });
       });

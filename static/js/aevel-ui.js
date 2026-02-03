@@ -86,6 +86,30 @@
         el.classList.remove('loading-active');
         el.removeAttribute('aria-busy');
       }
+    },
+
+    /** API helper: fetch + parse JSON, show error toast on failure, return data or throw */
+    api: function(method, path, body) {
+      var opts = { method: method, credentials: 'same-origin', headers: {} };
+      if (body !== undefined) {
+        opts.headers['Content-Type'] = 'application/json';
+        opts.body = JSON.stringify(body);
+      }
+      var self = this;
+      return fetch(path, opts).then(function(r) {
+        return r.json().then(function(data) {
+          if (!r.ok) {
+            var msg = (data && data.error) ? data.error : 'Request failed';
+            if (self.toast) self.toast(msg, 'error');
+            throw new Error(msg);
+          }
+          return data;
+        });
+      }).catch(function(err) {
+        if (self.toast && (!err.message || err.message === 'Failed to fetch')) self.toast('Request failed', 'error');
+        else if (self.toast && err.message) self.toast(err.message, 'error');
+        throw err;
+      });
     }
   };
 })();

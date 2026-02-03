@@ -36,6 +36,16 @@ Production-ready data analytics and marketing automation pipeline. B.L.A.S.T. pr
 3. Add env vars in Dashboard: `GEMINI_API_KEY`, `DATA_SOURCE_PATH` or `DATA_SOURCE_URL`, optional `DELIVERY_WEBHOOK_URL`.
 4. Cron: use Render cron or external scheduler to `POST /trigger` on schedule.
 
+## Testing
+
+Run API persistence and scoping tests (no pytest required):
+
+```bash
+python -m unittest tests.test_api_persistence -v
+```
+
+Uses a temporary DB; verifies workspace, flowcharts, tasks, notes, events, community notes, and activity logging.
+
 ## Admin & email (Zoho Mail)
 
 - **Admin** (`/admin`): Password-protected area to control which emails are sent and to whom. Set `ADMIN_PASSWORD` in `.env` (no default).

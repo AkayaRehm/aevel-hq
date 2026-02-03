@@ -1,11 +1,14 @@
 (function() {
   function api(method, path, body) {
+    if (typeof Aevel !== 'undefined' && Aevel.api) {
+      return Aevel.api(method, path, body);
+    }
     var opts = { method: method, credentials: 'same-origin', headers: {} };
     if (body !== undefined) {
       opts.headers['Content-Type'] = 'application/json';
       opts.body = JSON.stringify(body);
     }
-    return fetch(path, opts).then(function(r) { return r.json(); });
+    return fetch(path, opts).then(function(r) { return r.json().then(function(data) { if (!r.ok) throw new Error(data.error || 'Request failed'); return data; }); });
   }
 
   var listEl = document.getElementById('workspace-list');
@@ -75,7 +78,7 @@
     }).then(function() {
       loadPages();
       if (typeof Aevel !== 'undefined' && Aevel.toast) Aevel.toast('Saved', 'success');
-    });
+    }).catch(function() {});
   });
 
   document.getElementById('workspace-delete').addEventListener('click', function() {

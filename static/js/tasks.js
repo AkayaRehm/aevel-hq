@@ -1,8 +1,11 @@
 (function() {
   function api(method, path, body) {
-    var opts = { method: method, headers: { 'Content-Type': 'application/json' } };
+    if (typeof Aevel !== 'undefined' && Aevel.api) {
+      return Aevel.api(method, path, body);
+    }
+    var opts = { method: method, credentials: 'same-origin', headers: { 'Content-Type': 'application/json' } };
     if (body) opts.body = JSON.stringify(body);
-    return fetch(path, opts).then(function(r) { return r.json(); });
+    return fetch(path, opts).then(function(r) { return r.json().then(function(data) { if (!r.ok) throw new Error(data.error || 'Request failed'); return data; }); });
   }
 
   function loadTasks() {
@@ -70,7 +73,7 @@
         api('PATCH', '/api/tasks/' + id, { assigned_to: assignee, due_date: due, urgency: urgency }).then(function() {
           loadTasks().then(render);
           if (typeof Aevel !== 'undefined' && Aevel.toast) Aevel.toast('Updated', 'success');
-        });
+        }).catch(function() {});
       });
     });
     list.querySelectorAll('.task-cancel-edit').forEach(function(btn) {
@@ -117,7 +120,7 @@
         if (document.getElementById('task-urgency')) document.getElementById('task-urgency').value = 'normal';
         loadTasks().then(render);
         if (typeof Aevel !== 'undefined' && Aevel.toast) Aevel.toast('Task added', 'success');
-      });
+      }).catch(function() {});
     });
   }
 

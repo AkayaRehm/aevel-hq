@@ -156,6 +156,18 @@ def migrate_db():
             FOREIGN KEY (user_id) REFERENCES users(id)
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS activity_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            action TEXT NOT NULL,
+            resource_type TEXT,
+            resource_id TEXT,
+            details TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+    """)
     conn.commit()
     # Seed email types if missing
     for etype in ("task_assigned", "due_soon", "digest"):
@@ -202,6 +214,20 @@ def get_user_id():
     return session.get("user_id")
 
 
+def log_activity(user_id, action, resource_type=None, resource_id=None, details=None):
+    """Persist user activity for analytics and debugging. Safe to call; never raises."""
+    try:
+        conn = get_db()
+        conn.execute(
+            "INSERT INTO activity_log (user_id, action, resource_type, resource_id, details) VALUES (?, ?, ?, ?, ?)",
+            (user_id, action, resource_type, resource_id, json.dumps(details) if details is not None else None),
+        )
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
+
 def get_email_settings():
     """Return dict of email_type -> {enabled: bool, recipients: list of emails}."""
     conn = get_db()
@@ -241,8 +267,10 @@ def send_app_email(email_type, subject, body_html_or_text, to_emails=None):
             msg.html = body_html_or_text
             msg.body = body_html_or_text.replace("<br>", "\n").replace("</p>", "\n")
         mail.send(msg)
+        log_activity(None, "email_sent", details={"email_type": email_type, "ok": True})
         return True
-    except Exception:
+    except Exception as e:
+        log_activity(None, "email_sent", details={"email_type": email_type, "ok": False, "error": str(e)})
         return False
 
 
@@ -322,6 +350,7 @@ def login():
         if user and check_password_hash(user["password_hash"], password):
             session["user_id"] = user["id"]
             session["user_email"] = user["email"]
+            log_activity(user["id"], "login")
             return redirect(url_for("dashboard"))
         flash("Invalid email or password", "error")
     return render_template("login.html")
@@ -353,6 +382,7 @@ def register():
             conn.close()
             session["user_id"] = user["id"]
             session["user_email"] = user["email"]
+            log_activity(user["id"], "register")
             return redirect(url_for("dashboard"))
         except sqlite3.IntegrityError:
             conn.close()
@@ -419,6 +449,7 @@ def api_admin_email_settings_update():
         )
     conn.commit()
     conn.close()
+    log_activity(get_user_id(), "admin_email_settings_update", resource_type="email_settings", resource_id=email_type)
     return jsonify(get_email_settings())
 
 
@@ -441,6 +472,7 @@ def api_admin_send_now():
     subject = data.get("subject") or subj
     body_html = data.get("body") or body
     ok = send_app_email(email_type, subject, body_html, to_emails=None)
+    log_activity(get_user_id(), "admin_send_now", resource_type="email", details={"email_type": email_type, "ok": ok})
     return jsonify({"ok": ok, "message": "Sent." if ok else "Not sent (check enabled + recipients)."}), 200
 
 
@@ -462,8 +494,10 @@ def api_admin_send_custom():
         if "<" in body and ">" in body:
             msg.html = body
         mail.send(msg)
+        log_activity(get_user_id(), "admin_send_custom", details={"to": to_email, "ok": True})
         return jsonify({"ok": True, "message": "Sent to " + to_email}), 200
     except Exception as e:
+        log_activity(get_user_id(), "admin_send_custom", details={"to": to_email, "ok": False, "error": str(e)})
         return jsonify({"ok": False, "message": "Send failed: " + str(e)}), 200
 
 
@@ -562,9 +596,11 @@ def team_tasks_page():
 @app.route("/api/workspace", methods=["GET"])
 @login_required
 def api_workspace_list():
+    user_id = get_user_id()
     conn = get_db()
     rows = conn.execute(
-        "SELECT id, title, body, created_at, updated_at FROM workspace_pages ORDER BY updated_at DESC"
+        "SELECT id, title, body, created_at, updated_at FROM workspace_pages WHERE user_id = ? ORDER BY updated_at DESC",
+        (user_id,),
     ).fetchall()
     conn.close()
     pages = [
@@ -588,22 +624,39 @@ def api_workspace_create():
     body = (data.get("body") or "").strip()
     page_id = str(uuid.uuid4())
     user_id = get_user_id()
-    conn = get_db()
-    conn.execute(
-        "INSERT INTO workspace_pages (id, user_id, title, body) VALUES (?, ?, ?, ?)",
-        (page_id, user_id, title, body),
-    )
-    conn.commit()
-    conn.close()
-    return jsonify({"id": page_id, "title": title, "body": body}), 201
+    conn = None
+    try:
+        conn = get_db()
+        conn.execute(
+            "INSERT INTO workspace_pages (id, user_id, title, body) VALUES (?, ?, ?, ?)",
+            (page_id, user_id, title, body),
+        )
+        conn.commit()
+        log_activity(user_id, "workspace_create", "workspace_page", page_id)
+        return jsonify({"id": page_id, "title": title, "body": body}), 201
+    except Exception:
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        return jsonify({"error": "Failed to create page"}), 500
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 
 @app.route("/api/workspace/<pid>", methods=["GET"])
 @login_required
 def api_workspace_get(pid):
+    user_id = get_user_id()
     conn = get_db()
     row = conn.execute(
-        "SELECT id, title, body, created_at, updated_at FROM workspace_pages WHERE id = ?", (pid,)
+        "SELECT id, title, body, created_at, updated_at FROM workspace_pages WHERE id = ? AND user_id = ?",
+        (pid, user_id),
     ).fetchone()
     conn.close()
     if not row:
@@ -614,26 +667,31 @@ def api_workspace_get(pid):
 @app.route("/api/workspace/<pid>", methods=["PATCH"])
 @login_required
 def api_workspace_update(pid):
+    user_id = get_user_id()
     data = request.get_json(silent=True) or {}
     conn = get_db()
-    row = conn.execute("SELECT id FROM workspace_pages WHERE id = ?", (pid,)).fetchone()
+    row = conn.execute(
+        "SELECT id FROM workspace_pages WHERE id = ? AND user_id = ?", (pid, user_id)
+    ).fetchone()
     if not row:
         conn.close()
         return jsonify({"error": "not found"}), 404
     if "title" in data:
         title = (str(data["title"]) or "").strip() or "Untitled"
         conn.execute(
-            "UPDATE workspace_pages SET title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            (title, pid),
+            "UPDATE workspace_pages SET title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?",
+            (title, pid, user_id),
         )
     if "body" in data:
         conn.execute(
-            "UPDATE workspace_pages SET body = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            (data.get("body") or "", pid),
+            "UPDATE workspace_pages SET body = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?",
+            (data.get("body") or "", pid, user_id),
         )
     conn.commit()
+    log_activity(user_id, "workspace_update", "workspace_page", pid)
     row = conn.execute(
-        "SELECT id, title, body, created_at, updated_at FROM workspace_pages WHERE id = ?", (pid,)
+        "SELECT id, title, body, created_at, updated_at FROM workspace_pages WHERE id = ? AND user_id = ?",
+        (pid, user_id),
     ).fetchone()
     conn.close()
     return jsonify(dict(row))
@@ -642,20 +700,26 @@ def api_workspace_update(pid):
 @app.route("/api/workspace/<pid>", methods=["DELETE"])
 @login_required
 def api_workspace_delete(pid):
+    user_id = get_user_id()
     conn = get_db()
-    conn.execute("DELETE FROM workspace_pages WHERE id = ?", (pid,))
+    cur = conn.execute("DELETE FROM workspace_pages WHERE id = ? AND user_id = ?", (pid, user_id))
     conn.commit()
     conn.close()
+    if cur.rowcount == 0:
+        return jsonify({"error": "not found"}), 404
+    log_activity(user_id, "workspace_delete", "workspace_page", pid)
     return jsonify({"ok": True}), 200
 
 
-# — API: flowcharts (team-wide)
+# — API: flowcharts (user-scoped)
 @app.route("/api/flowcharts", methods=["GET"])
 @login_required
 def api_flowcharts_list():
+    user_id = get_user_id()
     conn = get_db()
     rows = conn.execute(
-        "SELECT id, title, mermaid_text, created_at, updated_at FROM flowcharts ORDER BY updated_at DESC"
+        "SELECT id, title, mermaid_text, created_at, updated_at FROM flowcharts WHERE user_id = ? ORDER BY updated_at DESC",
+        (user_id,),
     ).fetchall()
     conn.close()
     items = [
@@ -679,22 +743,39 @@ def api_flowcharts_create():
     mermaid_text = (data.get("mermaid_text") or "").strip()
     fc_id = str(uuid.uuid4())
     user_id = get_user_id()
-    conn = get_db()
-    conn.execute(
-        "INSERT INTO flowcharts (id, user_id, title, mermaid_text) VALUES (?, ?, ?, ?)",
-        (fc_id, user_id, title, mermaid_text),
-    )
-    conn.commit()
-    conn.close()
-    return jsonify({"id": fc_id, "title": title, "mermaid_text": mermaid_text}), 201
+    conn = None
+    try:
+        conn = get_db()
+        conn.execute(
+            "INSERT INTO flowcharts (id, user_id, title, mermaid_text) VALUES (?, ?, ?, ?)",
+            (fc_id, user_id, title, mermaid_text),
+        )
+        conn.commit()
+        log_activity(user_id, "flowchart_create", "flowchart", fc_id)
+        return jsonify({"id": fc_id, "title": title, "mermaid_text": mermaid_text}), 201
+    except Exception:
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        return jsonify({"error": "Failed to create flowchart"}), 500
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 
 @app.route("/api/flowcharts/<fid>", methods=["GET"])
 @login_required
 def api_flowcharts_get(fid):
+    user_id = get_user_id()
     conn = get_db()
     row = conn.execute(
-        "SELECT id, title, mermaid_text, created_at, updated_at FROM flowcharts WHERE id = ?", (fid,)
+        "SELECT id, title, mermaid_text, created_at, updated_at FROM flowcharts WHERE id = ? AND user_id = ?",
+        (fid, user_id),
     ).fetchone()
     conn.close()
     if not row:
@@ -705,26 +786,31 @@ def api_flowcharts_get(fid):
 @app.route("/api/flowcharts/<fid>", methods=["PATCH"])
 @login_required
 def api_flowcharts_update(fid):
+    user_id = get_user_id()
     data = request.get_json(silent=True) or {}
     conn = get_db()
-    row = conn.execute("SELECT id FROM flowcharts WHERE id = ?", (fid,)).fetchone()
+    row = conn.execute(
+        "SELECT id FROM flowcharts WHERE id = ? AND user_id = ?", (fid, user_id)
+    ).fetchone()
     if not row:
         conn.close()
         return jsonify({"error": "not found"}), 404
     if "title" in data:
         title = (str(data["title"]) or "").strip() or "Untitled flowchart"
         conn.execute(
-            "UPDATE flowcharts SET title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            (title, fid),
+            "UPDATE flowcharts SET title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?",
+            (title, fid, user_id),
         )
     if "mermaid_text" in data:
         conn.execute(
-            "UPDATE flowcharts SET mermaid_text = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            (data.get("mermaid_text") or "", fid),
+            "UPDATE flowcharts SET mermaid_text = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?",
+            (data.get("mermaid_text") or "", fid, user_id),
         )
     conn.commit()
+    log_activity(user_id, "flowchart_update", "flowchart", fid)
     row = conn.execute(
-        "SELECT id, title, mermaid_text, created_at, updated_at FROM flowcharts WHERE id = ?", (fid,)
+        "SELECT id, title, mermaid_text, created_at, updated_at FROM flowcharts WHERE id = ? AND user_id = ?",
+        (fid, user_id),
     ).fetchone()
     conn.close()
     return jsonify(dict(row))
@@ -733,10 +819,14 @@ def api_flowcharts_update(fid):
 @app.route("/api/flowcharts/<fid>", methods=["DELETE"])
 @login_required
 def api_flowcharts_delete(fid):
+    user_id = get_user_id()
     conn = get_db()
-    conn.execute("DELETE FROM flowcharts WHERE id = ?", (fid,))
+    cur = conn.execute("DELETE FROM flowcharts WHERE id = ? AND user_id = ?", (fid, user_id))
     conn.commit()
     conn.close()
+    if cur.rowcount == 0:
+        return jsonify({"error": "not found"}), 404
+    log_activity(user_id, "flowchart_delete", "flowchart", fid)
     return jsonify({"ok": True}), 200
 
 
@@ -773,23 +863,42 @@ def api_community_notes_create():
     body = (data.get("body") or "").strip()
     note_id = str(uuid.uuid4())
     user_id = get_user_id()
-    conn = get_db()
-    conn.execute(
-        "INSERT INTO community_notes (id, user_id, title, body) VALUES (?, ?, ?, ?)",
-        (note_id, user_id, title, body),
-    )
-    conn.commit()
-    conn.close()
-    return jsonify({"id": note_id, "title": title, "body": body}), 201
+    conn = None
+    try:
+        conn = get_db()
+        conn.execute(
+            "INSERT INTO community_notes (id, user_id, title, body) VALUES (?, ?, ?, ?)",
+            (note_id, user_id, title, body),
+        )
+        conn.commit()
+        log_activity(user_id, "community_note_create", "community_note", note_id)
+        return jsonify({"id": note_id, "title": title, "body": body}), 201
+    except Exception:
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        return jsonify({"error": "Failed to create note"}), 500
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 
 @app.route("/api/community-notes/<nid>", methods=["DELETE"])
 @login_required
 def api_community_notes_delete(nid):
+    user_id = get_user_id()
     conn = get_db()
-    conn.execute("DELETE FROM community_notes WHERE id = ?", (nid,))
+    cur = conn.execute("DELETE FROM community_notes WHERE id = ? AND user_id = ?", (nid, user_id))
     conn.commit()
     conn.close()
+    if cur.rowcount == 0:
+        return jsonify({"error": "not found"}), 404
+    log_activity(user_id, "community_note_delete", "community_note", nid)
     return jsonify({"ok": True}), 200
 
 
@@ -862,14 +971,29 @@ def api_preferences_update():
                 prefs[k] = bool(data[k])
             elif k.startswith("dashboard_"):
                 prefs[k] = bool(data[k])
-    conn = get_db()
-    conn.execute(
-        "INSERT INTO user_preferences (user_id, prefs_json, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP) ON CONFLICT(user_id) DO UPDATE SET prefs_json = excluded.prefs_json, updated_at = CURRENT_TIMESTAMP",
-        (user_id, json.dumps(prefs)),
-    )
-    conn.commit()
-    conn.close()
-    return jsonify(prefs)
+    conn = None
+    try:
+        conn = get_db()
+        conn.execute(
+            "INSERT INTO user_preferences (user_id, prefs_json, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP) ON CONFLICT(user_id) DO UPDATE SET prefs_json = excluded.prefs_json, updated_at = CURRENT_TIMESTAMP",
+            (user_id, json.dumps(prefs)),
+        )
+        conn.commit()
+        log_activity(user_id, "preferences_update")
+        return jsonify(prefs)
+    except Exception:
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        return jsonify({"error": "Failed to save preferences"}), 500
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 
 # — API: dashboard stats
@@ -946,6 +1070,7 @@ def api_tasks_create():
     )
     conn.commit()
     conn.close()
+    log_activity(user_id, "task_create", "task", task_id)
     if assigned_to:
         emails = [e.strip() for e in assigned_to.split(",") if e.strip()]
         send_app_email(
@@ -1003,6 +1128,7 @@ def api_tasks_update(tid):
     conn.commit()
     row = conn.execute("SELECT id, text, done, assigned_to, due_date, urgency FROM tasks WHERE id = ? AND user_id = ?", (tid, user_id)).fetchone()
     conn.close()
+    log_activity(user_id, "task_update", "task", tid)
     return jsonify(_task_row_to_json(dict(row)))
 
 
@@ -1014,6 +1140,7 @@ def api_tasks_delete(tid):
     conn.execute("DELETE FROM tasks WHERE id = ? AND user_id = ?", (tid, user_id))
     conn.commit()
     conn.close()
+    log_activity(user_id, "task_delete", "task", tid)
     return jsonify({"ok": True}), 200
 
 
@@ -1043,6 +1170,7 @@ def api_notes_create():
     conn.execute("INSERT INTO notes (id, user_id, title, body) VALUES (?, ?, ?, ?)", (note_id, user_id, title, body))
     conn.commit()
     conn.close()
+    log_activity(user_id, "note_create", "note", note_id)
     return jsonify({"id": note_id, "title": title, "body": body}), 201
 
 
@@ -1054,6 +1182,7 @@ def api_notes_delete(nid):
     conn.execute("DELETE FROM notes WHERE id = ? AND user_id = ?", (nid, user_id))
     conn.commit()
     conn.close()
+    log_activity(user_id, "note_delete", "note", nid)
     return jsonify({"ok": True}), 200
 
 
@@ -1083,6 +1212,7 @@ def api_events_create():
     conn.execute("INSERT INTO events (id, user_id, date, title) VALUES (?, ?, ?, ?)", (event_id, user_id, date, title))
     conn.commit()
     conn.close()
+    log_activity(user_id, "event_create", "event", event_id)
     return jsonify({"id": event_id, "date": date, "title": title}), 201
 
 
@@ -1094,6 +1224,7 @@ def api_events_delete(eid):
     conn.execute("DELETE FROM events WHERE id = ? AND user_id = ?", (eid, user_id))
     conn.commit()
     conn.close()
+    log_activity(user_id, "event_delete", "event", eid)
     return jsonify({"ok": True}), 200
 
 
