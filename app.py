@@ -146,6 +146,16 @@ def migrate_db():
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS community_notes (
+            id TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            body TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+    """)
     conn.commit()
     # Seed email types if missing
     for etype in ("task_assigned", "due_soon", "digest"):
@@ -434,6 +444,29 @@ def api_admin_send_now():
     return jsonify({"ok": ok, "message": "Sent." if ok else "Not sent (check enabled + recipients)."}), 200
 
 
+@app.route("/api/admin/send-custom", methods=["POST"])
+@admin_required
+def api_admin_send_custom():
+    """Send one email to a specific address with custom subject and body (admin only)."""
+    data = request.get_json(silent=True) or {}
+    to_email = (data.get("email") or "").strip()
+    if not to_email or "@" not in to_email:
+        return jsonify({"error": "Valid email required"}), 400
+    subject = (data.get("subject") or "Message from Aevel").strip() or "Message from Aevel"
+    body = (data.get("body") or "").strip() or "(No message)"
+    if not mail or not ZOHO_PASSWORD:
+        return jsonify({"ok": False, "message": "Email not configured."}), 200
+    try:
+        from flask_mail import Message
+        msg = Message(subject=subject, recipients=[to_email], body=body)
+        if "<" in body and ">" in body:
+            msg.html = body
+        mail.send(msg)
+        return jsonify({"ok": True, "message": "Sent to " + to_email}), 200
+    except Exception as e:
+        return jsonify({"ok": False, "message": "Send failed: " + str(e)}), 200
+
+
 @app.route("/", methods=["GET"])
 def index():
     if "user_id" in session:
@@ -511,6 +544,18 @@ def workspace_page():
 @login_required
 def flowcharts_page():
     return render_template("flowcharts.html")
+
+
+@app.route("/community-notes", methods=["GET"])
+@login_required
+def community_notes_page():
+    return render_template("community_notes.html")
+
+
+@app.route("/team-tasks", methods=["GET"])
+@login_required
+def team_tasks_page():
+    return render_template("team_tasks.html")
 
 
 # — API: workspace pages (team-wide collab, Notion-like)
@@ -695,6 +740,87 @@ def api_flowcharts_delete(fid):
     return jsonify({"ok": True}), 200
 
 
+# — API: community notes (team ideas, everyone can add and see)
+@app.route("/api/community-notes", methods=["GET"])
+@login_required
+def api_community_notes_list():
+    conn = get_db()
+    rows = conn.execute("""
+        SELECT n.id, n.user_id, n.title, n.body, n.created_at, u.email as author_email
+        FROM community_notes n
+        LEFT JOIN users u ON u.id = n.user_id
+        ORDER BY n.created_at DESC
+    """).fetchall()
+    conn.close()
+    notes = [
+        {
+            "id": r["id"],
+            "title": r["title"] or "",
+            "body": r["body"] or "",
+            "created_at": r["created_at"],
+            "author_email": r["author_email"] or "",
+        }
+        for r in rows
+    ]
+    return jsonify({"notes": notes})
+
+
+@app.route("/api/community-notes", methods=["POST"])
+@login_required
+def api_community_notes_create():
+    data = request.get_json(silent=True) or {}
+    title = (data.get("title") or "Idea").strip() or "Idea"
+    body = (data.get("body") or "").strip()
+    note_id = str(uuid.uuid4())
+    user_id = get_user_id()
+    conn = get_db()
+    conn.execute(
+        "INSERT INTO community_notes (id, user_id, title, body) VALUES (?, ?, ?, ?)",
+        (note_id, user_id, title, body),
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({"id": note_id, "title": title, "body": body}), 201
+
+
+@app.route("/api/community-notes/<nid>", methods=["DELETE"])
+@login_required
+def api_community_notes_delete(nid):
+    conn = get_db()
+    conn.execute("DELETE FROM community_notes WHERE id = ?", (nid,))
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True}), 200
+
+
+# — API: team tasks (all tasks from all users, with owner)
+@app.route("/api/tasks/team", methods=["GET"])
+@login_required
+def api_tasks_team():
+    conn = get_db()
+    rows = conn.execute("""
+        SELECT t.id, t.text, t.done, t.assigned_to, t.due_date, t.urgency, t.created_at, u.email as owner_email
+        FROM tasks t
+        LEFT JOIN users u ON u.id = t.user_id
+        ORDER BY t.created_at DESC
+    """).fetchall()
+    conn.close()
+    tasks = [
+        {
+            "id": r["id"],
+            "text": r["text"],
+            "done": bool(r["done"]),
+            "assigned_to": (r["assigned_to"] or "").strip(),
+            "due_date": (r["due_date"] or "").strip(),
+            "urgency": (r["urgency"] or "normal").strip(),
+            "created_at": r["created_at"],
+            "owner_email": r["owner_email"] or "",
+        }
+        for r in rows
+    ]
+    return jsonify({"tasks": tasks})
+
+
 # — API: user preferences (customization)
 DEFAULT_PREFS = {
     "dashboard_kpis": True,
@@ -767,7 +893,7 @@ def api_dashboard_stats():
 
 # — API: tasks (with assignee, due_date, urgency; task_assigned email when assigned_to set)
 def _task_row_to_json(r):
-    return {
+    out = {
         "id": r["id"],
         "text": r["text"],
         "done": bool(r["done"]),
@@ -775,6 +901,9 @@ def _task_row_to_json(r):
         "due_date": (r["due_date"] or "").strip() if "due_date" in r.keys() else "",
         "urgency": (r["urgency"] or "normal").strip() if "urgency" in r.keys() else "normal",
     }
+    if "created_at" in r.keys() and r["created_at"]:
+        out["created_at"] = r["created_at"]
+    return out
 
 
 @app.route("/api/tasks", methods=["GET"])
@@ -783,7 +912,7 @@ def api_tasks_list():
     user_id = get_user_id()
     conn = get_db()
     rows = conn.execute(
-        "SELECT id, text, done, assigned_to, due_date, urgency FROM tasks WHERE user_id = ? ORDER BY created_at DESC",
+        "SELECT id, text, done, assigned_to, due_date, urgency, created_at FROM tasks WHERE user_id = ? ORDER BY created_at DESC",
         (user_id,),
     ).fetchall()
     conn.close()
@@ -894,9 +1023,9 @@ def api_tasks_delete(tid):
 def api_notes_list():
     user_id = get_user_id()
     conn = get_db()
-    rows = conn.execute("SELECT id, title, body FROM notes WHERE user_id = ? ORDER BY created_at DESC", (user_id,)).fetchall()
+    rows = conn.execute("SELECT id, title, body, created_at FROM notes WHERE user_id = ? ORDER BY created_at DESC", (user_id,)).fetchall()
     conn.close()
-    notes = [{"id": r["id"], "title": r["title"], "body": r["body"] or ""} for r in rows]
+    notes = [{"id": r["id"], "title": r["title"], "body": r["body"] or "", "created_at": r["created_at"] or ""} for r in rows]
     return jsonify({"notes": notes})
 
 

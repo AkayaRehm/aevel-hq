@@ -3,15 +3,34 @@
 {% block content %}
 <div class="page-header">
   <h1>Admin — Email controls</h1>
-  <p class="text-secondary">Control which emails are sent and who receives them. Emails are sent from {{ zoho_email }}.</p>
+  <p class="text-secondary">From {{ zoho_email }}. Configure types and recipients.</p>
   <form method="POST" action="{{ url_for('admin_logout') }}" style="margin-top:0.5rem;">
     <button type="submit" class="btn btn-secondary">Exit admin</button>
   </form>
 </div>
 
+<div class="card admin-custom-send-card" style="max-width: 720px; margin-bottom: 1.5rem;">
+  <h2 style="margin-top:0;">Send custom email now</h2>
+  <p class="text-secondary">Type an email and message below to send one email right now (from {{ zoho_email }}).</p>
+  <div class="form-group">
+    <label for="admin-custom-email">To (email address)</label>
+    <input type="email" id="admin-custom-email" class="input" placeholder="someone@example.com">
+  </div>
+  <div class="form-group">
+    <label for="admin-custom-subject">Subject (optional)</label>
+    <input type="text" id="admin-custom-subject" class="input" placeholder="Message from Aevel">
+  </div>
+  <div class="form-group">
+    <label for="admin-custom-body">Message to send</label>
+    <textarea id="admin-custom-body" class="textarea" rows="5" placeholder="Type your message here…"></textarea>
+  </div>
+  <button type="button" id="admin-custom-send" class="btn btn-primary">Send now</button>
+  <span id="admin-custom-status" class="text-secondary" style="margin-left: 0.75rem;"></span>
+</div>
+
 <div class="card" style="max-width: 720px;">
   <h2 style="margin-top:0;">Email types &amp; recipients</h2>
-  <p class="text-secondary">Enable each type and set recipient addresses (comma-separated). Only enabled types with at least one recipient will send.</p>
+  <p class="text-secondary">Recipients comma-separated.</p>
   <div id="admin-email-settings"></div>
   <p id="admin-save-status" class="text-secondary" style="margin-top:1rem;"></p>
 </div>
@@ -106,6 +125,40 @@
       })
       .catch(function() { statusEl.textContent = 'Failed to save.'; });
   }
+
+  document.getElementById('admin-custom-send').addEventListener('click', function() {
+    var emailEl = document.getElementById('admin-custom-email');
+    var subjectEl = document.getElementById('admin-custom-subject');
+    var bodyEl = document.getElementById('admin-custom-body');
+    var statusEl = document.getElementById('admin-custom-status');
+    var email = (emailEl && emailEl.value || '').trim();
+    var subject = (subjectEl && subjectEl.value || '').trim() || 'Message from Aevel';
+    var body = (bodyEl && bodyEl.value || '').trim();
+    if (!email) {
+      statusEl.textContent = 'Enter an email address.';
+      return;
+    }
+    if (!body) body = '(No message)';
+    statusEl.textContent = 'Sending…';
+    this.disabled = true;
+    fetch('/api/admin/send-custom', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email, subject: subject, body: body })
+    }).then(function(r) { return r.json(); }).then(function(res) {
+      statusEl.textContent = res.message || (res.ok ? 'Sent.' : 'Failed.');
+      if (res.ok) {
+        emailEl.value = '';
+        bodyEl.value = '';
+        subjectEl.value = '';
+      }
+    }).catch(function() {
+      statusEl.textContent = 'Send failed.';
+    }).finally(function() {
+      document.getElementById('admin-custom-send').disabled = false;
+    });
+  });
 
   load();
 })();

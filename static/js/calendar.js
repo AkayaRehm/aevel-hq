@@ -4,11 +4,20 @@
   var gridEl = document.getElementById('cal-grid');
   var titleEl = document.getElementById('cal-title');
   var eventsListEl = document.getElementById('events-list');
+  var calDateInput = document.getElementById('cal-date');
 
   function api(method, path, body) {
     var opts = { method: method, headers: { 'Content-Type': 'application/json' } };
     if (body) opts.body = JSON.stringify(body);
     return fetch(path, opts).then(function(r) { return r.json(); });
+  }
+
+  function toDateStr(d) {
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+
+  function setFormDateToToday() {
+    if (calDateInput) calDateInput.value = toDateStr(new Date());
   }
 
   function loadEvents() {
@@ -19,6 +28,7 @@
     if (!gridEl || !titleEl) return;
     var y = current.getFullYear();
     var m = current.getMonth();
+    var todayStr = toDateStr(new Date());
     titleEl.textContent = monthNames[m] + ' ' + y;
     var first = new Date(y, m, 1);
     var last = new Date(y, m + 1, 0);
@@ -26,9 +36,14 @@
     var daysInMonth = last.getDate();
     loadEvents().then(function(events) {
       var eventDates = {};
+      var eventTitles = {};
       events.forEach(function(ev) {
         var d = ev.date;
-        if (d) eventDates[d] = (eventDates[d] || 0) + 1;
+        if (d) {
+          eventDates[d] = (eventDates[d] || 0) + 1;
+          if (!eventTitles[d]) eventTitles[d] = [];
+          eventTitles[d].push((ev.title || '').replace(/</g, '&lt;'));
+        }
       });
       var html = '';
       var dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
@@ -41,8 +56,11 @@
       }
       for (var d = 1; d <= daysInMonth; d++) {
         var dateStr = y + '-' + String(m + 1).padStart(2, '0') + '-' + String(d).padStart(2, '0');
-        var cls = 'cal-cell' + (eventDates[dateStr] ? ' has-event' : '');
-        html += '<div class="cal-cell ' + (eventDates[dateStr] ? 'has-event' : '') + '" data-date="' + dateStr + '">' + d + '</div>';
+        var hasEvent = eventDates[dateStr];
+        var isToday = dateStr === todayStr;
+        var cls = 'cal-cell' + (hasEvent ? ' has-event' : '') + (isToday ? ' today' : '');
+        var titles = (eventTitles[dateStr] || []).slice(0, 2).map(function(t) { return '<span class="cal-cell-event">' + t + '</span>'; }).join('');
+        html += '<div class="' + cls + '" data-date="' + dateStr + '"><span class="cal-cell-day">' + d + '</span>' + titles + '</div>';
       }
       var total = pad + daysInMonth;
       var rest = total % 7 ? 7 - (total % 7) : 0;
@@ -50,6 +68,15 @@
         html += '<div class="cal-cell other">' + (j + 1) + '</div>';
       }
       gridEl.innerHTML = html;
+      gridEl.querySelectorAll('.cal-cell[data-date]').forEach(function(cell) {
+        cell.addEventListener('click', function() {
+          var date = this.getAttribute('data-date');
+          if (date && calDateInput) {
+            calDateInput.value = date;
+            calDateInput.focus();
+          }
+        });
+      });
       renderEventsList(events, y, m);
     });
   }
@@ -61,13 +88,13 @@
       return e.date && e.date.startsWith(y + '-' + monthStr);
     }).sort(function(a, b) { return (a.date || '').localeCompare(b.date || ''); });
     eventsListEl.innerHTML = inMonth.length ? inMonth.map(function(ev) {
-      return '<li><span>' + (ev.date || '') + ' — ' + (ev.title || '').replace(/</g, '&lt;') + '</span><button type="button" class="btn btn-small btn-danger" data-id="' + (ev.id || '') + '" aria-label="Delete event">Delete</button></li>';
-    }).join('') : '<li class="empty-state"><p class="empty-state__title">No events this month</p><p>Add one using the form above.</p></li>';
+      return '<li><span class="event-date">' + (ev.date || '') + '</span><span class="event-title">' + (ev.title || '').replace(/</g, '&lt;') + '</span><button type="button" class="btn btn-small btn-danger" data-id="' + (ev.id || '') + '" aria-label="Delete event">Delete</button></li>';
+    }).join('') : '<li class="empty-state"><p class="empty-state__title">No events this month</p><p>Click a day above and add an event.</p></li>';
     eventsListEl.querySelectorAll('.btn-danger').forEach(function(btn) {
       btn.addEventListener('click', function() {
         var id = btn.getAttribute('data-id');
         if (!id) return;
-        var label = (btn.closest('li') && btn.closest('li').querySelector('span') && btn.closest('li').querySelector('span').textContent) || 'this event';
+        var label = (btn.closest('li') && btn.closest('li').querySelector('.event-title') && btn.closest('li').querySelector('.event-title').textContent) || 'this event';
         if (typeof Aevel !== 'undefined' && Aevel.confirm) {
           Aevel.confirm({ title: 'Delete event', body: 'Delete “‘ + label.substring(0, 50) + (label.length > 50 ? '…”' : '”') + '?', confirmLabel: 'Delete', cancelLabel: 'Cancel', danger: true }, function() {
             api('DELETE', '/api/events/' + id).then(function() { renderCalendar(); if (Aevel.toast) Aevel.toast('Event deleted', 'success'); });
@@ -81,8 +108,15 @@
 
   var prevBtn = document.getElementById('cal-prev');
   var nextBtn = document.getElementById('cal-next');
+  var todayBtn = document.getElementById('cal-today');
   if (prevBtn) prevBtn.addEventListener('click', function() { current.setMonth(current.getMonth() - 1); renderCalendar(); });
   if (nextBtn) nextBtn.addEventListener('click', function() { current.setMonth(current.getMonth() + 1); renderCalendar(); });
+  if (todayBtn) todayBtn.addEventListener('click', function() {
+    current = new Date();
+    renderCalendar();
+    setFormDateToToday();
+    if (Aevel && Aevel.toast) Aevel.toast('Showing today', 'success');
+  });
 
   var calForm = document.getElementById('cal-form');
   if (calForm) {
@@ -95,12 +129,12 @@
       if (!date || !title) return;
       api('POST', '/api/events', { date: date, title: title }).then(function() {
         if (titleEl) titleEl.value = '';
-        if (dateEl) dateEl.value = '';
         renderCalendar();
         if (typeof Aevel !== 'undefined' && Aevel.toast) Aevel.toast('Event added', 'success');
       });
     });
   }
 
+  setFormDateToToday();
   renderCalendar();
 })();

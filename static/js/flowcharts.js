@@ -111,6 +111,15 @@
     });
   });
 
+  var togglePreviewBtn = document.getElementById('flowchart-toggle-preview');
+  var splitEl = document.getElementById('flowchart-split');
+  if (togglePreviewBtn && splitEl) {
+    togglePreviewBtn.addEventListener('click', function() {
+      splitEl.classList.toggle('full-preview');
+      this.textContent = splitEl.classList.contains('full-preview') ? 'Split view' : 'Preview full';
+    });
+  }
+
   document.getElementById('flowchart-delete').addEventListener('click', function() {
     if (!currentId) return;
     if (typeof Aevel !== 'undefined' && Aevel.confirm) {

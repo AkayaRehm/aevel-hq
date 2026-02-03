@@ -3,33 +3,24 @@
 {% block content %}
 <div class="page-header">
   <h1>Settings</h1>
-  <p class="subtitle">Account and preferences</p>
+  <p class="subtitle">Preferences</p>
 </div>
 
 <section class="section">
-  <h2 class="section-title">Preferences</h2>
+  <h2 class="section-title">Dashboard</h2>
   <div class="card">
-    <p style="margin: 0 0 1rem; font-size: 0.9375rem; color: var(--text-secondary);">Customize what appears on your dashboard and layout density.</p>
     <div class="prefs-grid">
       <label class="pref-row">
         <input type="checkbox" id="pref-dashboard_kpis" class="pref-checkbox">
-        <span>Show KPI cards on dashboard</span>
-      </label>
-      <label class="pref-row">
-        <input type="checkbox" id="pref-dashboard_chart" class="pref-checkbox">
-        <span>Show activity chart on dashboard</span>
-      </label>
-      <label class="pref-row">
-        <input type="checkbox" id="pref-dashboard_recent" class="pref-checkbox">
-        <span>Show recent activity table on dashboard</span>
+        <span>Summary numbers</span>
       </label>
       <label class="pref-row">
         <input type="checkbox" id="pref-dashboard_widgets" class="pref-checkbox">
-        <span>Show calendar & tasks widget on dashboard</span>
+        <span>Schedule and activity</span>
       </label>
       <label class="pref-row">
         <input type="checkbox" id="pref-compact" class="pref-checkbox">
-        <span>Compact layout (tighter spacing)</span>
+        <span>Compact layout</span>
       </label>
     </div>
     <button type="button" class="btn btn-primary" id="prefs-save" style="margin-top: 1rem;">Save preferences</button>
@@ -58,7 +49,7 @@
   <h2 class="section-title">About</h2>
   <div class="card">
     <div class="card-title">Aevel</div>
-    <p style="margin: 0; font-size: 0.9375rem; color: var(--text-secondary);">Data analytics dashboard. Pipeline, reports, and automations run on your data. Enterprise-grade, dark mode only.</p>
+    <p style="margin: 0; font-size: 0.9375rem; color: var(--text-secondary);">Analytics and automation. Pipeline, reports, tasks, calendar.</p>
   </div>
 </section>
 {% endblock %}
@@ -69,10 +60,8 @@
   function load() {
     fetch('/api/preferences').then(function(r) { return r.json(); }).then(function(d) {
       prefs = d;
-      document.getElementById('pref-dashboard_kpis').checked = !!d.dashboard_kpis;
-      document.getElementById('pref-dashboard_chart').checked = !!d.dashboard_chart;
-      document.getElementById('pref-dashboard_recent').checked = !!d.dashboard_recent;
-      document.getElementById('pref-dashboard_widgets').checked = !!d.dashboard_widgets;
+      document.getElementById('pref-dashboard_kpis').checked = d.dashboard_kpis !== false;
+      document.getElementById('pref-dashboard_widgets').checked = d.dashboard_widgets !== false;
       document.getElementById('pref-compact').checked = !!d.compact;
       applyCompact(d.compact);
     });
@@ -84,8 +73,8 @@
   document.getElementById('prefs-save').addEventListener('click', function() {
     var payload = {
       dashboard_kpis: document.getElementById('pref-dashboard_kpis').checked,
-      dashboard_chart: document.getElementById('pref-dashboard_chart').checked,
-      dashboard_recent: document.getElementById('pref-dashboard_recent').checked,
+      dashboard_chart: true,
+      dashboard_recent: true,
       dashboard_widgets: document.getElementById('pref-dashboard_widgets').checked,
       compact: document.getElementById('pref-compact').checked
     };

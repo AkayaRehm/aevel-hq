@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{% block title %}Dashboard{% endblock %} — Aevel</title>
+  <title>{% block title %}Dashboard{% endblock %} · Aevel</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/aevel.css') }}">
   {% block head %}{% endblock %}
 </head>
@@ -39,6 +39,14 @@
         <a href="{{ url_for('flowcharts_page') }}" class="{% if request.endpoint == 'flowcharts_page' %}active{% endif %}">
           <span class="icon"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></span>
           <span>Flowcharts</span>
+        </a>
+        <a href="{{ url_for('community_notes_page') }}" class="{% if request.endpoint == 'community_notes_page' %}active{% endif %}">
+          <span class="icon"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
+          <span>Community notes</span>
+        </a>
+        <a href="{{ url_for('team_tasks_page') }}" class="{% if request.endpoint == 'team_tasks_page' %}active{% endif %}">
+          <span class="icon"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
+          <span>Team tasks</span>
         </a>
         <a href="{{ url_for('integrations_page') }}" class="{% if request.endpoint == 'integrations_page' %}active{% endif %}">
           <span class="icon"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></span>
