@@ -6,23 +6,36 @@
 </div>
 
 <div class="dashboard-surface">
-  <div class="dashboard-insights" id="dashboard-insights" style="margin-bottom: var(--space-5); font-size: var(--text-sm); color: var(--text-secondary);"></div>
+  <div class="dashboard-ai-insights" id="dashboard-ai-insights">
+    <div class="dashboard-ai-header">
+      <span class="dashboard-ai-label">AI insights</span>
+      <button type="button" id="dashboard-ai-refresh" class="btn btn-small btn-ghost">Generate</button>
+    </div>
+    <div id="dashboard-ai-content" class="dashboard-ai-content"></div>
+  </div>
+
+  <div class="dashboard-insights" id="dashboard-insights" style="margin-bottom: var(--space-4); font-size: var(--text-sm); color: var(--text-secondary);"></div>
+
   <div class="dashboard-summary" id="dashboard-summary">
     <div class="dashboard-summary-item">
       <div class="card-value" id="kpi-tasks"><span class="skeleton" style="display:inline-block;width:2rem;height:1.5rem;vertical-align:middle;"></span></div>
       <div class="card-meta" id="kpi-tasks-meta">Tasks</div>
+      <div class="kpi-sparkline" id="sparkline-tasks"></div>
     </div>
     <div class="dashboard-summary-item">
       <div class="card-value" id="kpi-done"><span class="skeleton" style="display:inline-block;width:2rem;height:1.5rem;vertical-align:middle;"></span></div>
       <div class="card-meta">Done</div>
+      <div class="kpi-week-compare" id="week-compare-done"></div>
     </div>
     <div class="dashboard-summary-item">
       <div class="card-value" id="kpi-notes"><span class="skeleton" style="display:inline-block;width:2rem;height:1.5rem;vertical-align:middle;"></span></div>
       <div class="card-meta">Reports</div>
+      <div class="kpi-sparkline" id="sparkline-notes"></div>
     </div>
     <div class="dashboard-summary-item">
       <div class="card-value" id="kpi-events"><span class="skeleton" style="display:inline-block;width:2rem;height:1.5rem;vertical-align:middle;"></span></div>
       <div class="card-meta">Events</div>
+      <div class="kpi-context" id="kpi-context"></div>
     </div>
   </div>
 
@@ -39,20 +52,23 @@
     </div>
     <div class="dashboard-block">
       <div class="dashboard-block-title">Recent activity</div>
-      <div class="table-wrap">
-        <table class="table" id="recent-table">
-          <thead>
-            <tr>
-              <th>Action</th>
-              <th>Resource</th>
-              <th>When</th>
-            </tr>
-          </thead>
-          <tbody id="recent-tbody">
-            <tr><td colspan="3" class="cell-primary">Loading…</td></tr>
-          </tbody>
-        </table>
-      </div>
+      <details class="activity-timeline-details" open>
+        <summary class="activity-timeline-summary">Activity timeline</summary>
+        <div class="table-wrap">
+          <table class="table" id="recent-table">
+            <thead>
+              <tr>
+                <th>Action</th>
+                <th>Resource</th>
+                <th>When</th>
+              </tr>
+            </thead>
+            <tbody id="recent-tbody">
+              <tr><td colspan="3" class="cell-primary">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </details>
     </div>
   </div>
 </div>
@@ -60,6 +76,13 @@
 {% block scripts %}
 <script>
 (function() {
+  function api(method, path, body) {
+    if (typeof Aevel !== 'undefined' && Aevel.api) return Aevel.api(method, path, body);
+    var opts = { method: method, credentials: 'same-origin', headers: {} };
+    if (body) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
+    return fetch(path, opts).then(function(r) { return r.json().then(function(d) { if (!r.ok) throw new Error(d.error || 'Failed'); return d; }); });
+  }
+
   function applyPrefs(prefs) {
     var summary = document.getElementById('dashboard-summary');
     var activity = document.getElementById('dashboard-activity');
@@ -70,8 +93,20 @@
   }
   fetch('/api/preferences').then(function(r) { return r.json(); }).then(applyPrefs).catch(function() {});
 
+  function sparkline(values, el, maxHeight) {
+    if (!el || !values || values.length === 0) return;
+    var max = Math.max.apply(null, values.concat([1]));
+    var w = 60, h = maxHeight || 24;
+    var pts = values.map(function(v, i) {
+      var x = (i / (values.length - 1 || 1)) * w;
+      var y = h - (v / max) * (h - 2) - 1;
+      return x + ',' + y;
+    }).join(' ');
+    el.innerHTML = '<svg width="' + w + '" height="' + h + '" class="sparkline-svg"><polyline fill="none" stroke="currentColor" stroke-width="1.5" points="' + pts + '"/></svg>';
+  }
+
   function loadStats() {
-    fetch('/api/dashboard/stats', { credentials: 'same-origin' })
+    return fetch('/api/dashboard/stats', { credentials: 'same-origin' })
       .then(function(r) { return r.json(); })
       .then(function(d) {
         var total = d.tasks_total || 0;
@@ -81,14 +116,41 @@
         document.getElementById('kpi-done').textContent = done;
         document.getElementById('kpi-notes').textContent = d.notes_count || 0;
         document.getElementById('kpi-events').textContent = d.events_count || 0;
+
+        if (d.last_7_days && d.last_7_days.length) {
+          sparkline(d.last_7_days, document.getElementById('sparkline-tasks'), 20);
+        }
+        if (d.activity_this_week !== undefined && d.activity_last_week !== undefined) {
+          var diff = d.activity_this_week - d.activity_last_week;
+          var comp = document.getElementById('week-compare-done');
+          if (comp) {
+            comp.textContent = diff > 0 ? '↑ ' + diff + ' vs last week' : (diff < 0 ? '↓ ' + Math.abs(diff) + ' vs last week' : 'Same as last week');
+            comp.className = 'kpi-week-compare' + (diff > 0 ? ' kpi-up' : (diff < 0 ? ' kpi-down' : ''));
+          }
+        }
+        if (d.last_7_days && d.last_7_days.length) {
+          var maxVal = 0, maxIdx = 0;
+          d.last_7_days.forEach(function(v, i) { if (v > maxVal) { maxVal = v; maxIdx = i; } });
+          var dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+          var offset = 6 - (d.last_7_days.length - 1);
+          var ctx = document.getElementById('kpi-context');
+          if (ctx && maxVal > 0) ctx.textContent = 'Most active: ' + dayNames[(new Date().getDay() - 6 + maxIdx + 7) % 7];
+        }
+
         var insightsEl = document.getElementById('dashboard-insights');
-        if (insightsEl && (d.tasks_due_soon !== undefined || d.events_this_week !== undefined)) {
+        if (insightsEl) {
           var parts = [];
-          if (d.tasks_due_soon > 0) parts.push(d.tasks_due_soon + ' task' + (d.tasks_due_soon === 1 ? '' : 's') + ' due this week');
-          if (d.events_this_week > 0) parts.push(d.events_this_week + ' event' + (d.events_this_week === 1 ? '' : 's') + ' this week');
+          if ((d.tasks_due_soon || 0) > 0) parts.push(d.tasks_due_soon + ' task' + (d.tasks_due_soon === 1 ? '' : 's') + ' due this week');
+          if ((d.events_this_week || 0) > 0) parts.push(d.events_this_week + ' event' + (d.events_this_week === 1 ? '' : 's') + ' this week');
+          if ((d.activity_this_week || 0) !== (d.activity_last_week || 0)) {
+            var dlt = (d.activity_this_week || 0) - (d.activity_last_week || 0);
+            parts.push((dlt > 0 ? '+' : '') + dlt + ' actions vs last week');
+          }
           insightsEl.textContent = parts.length ? parts.join(' · ') : '';
           insightsEl.style.display = parts.length ? '' : 'none';
         }
+
+        window._lastStats = d;
       })
       .catch(function() {
         document.getElementById('kpi-tasks').textContent = '—';
@@ -100,8 +162,9 @@
   }
 
   var actionLabels = { task_create: 'Task created', task_update: 'Task updated', task_delete: 'Task deleted', note_create: 'Report created', note_delete: 'Report deleted', event_create: 'Event added', event_update: 'Event updated', event_delete: 'Event deleted', workspace_create: 'Page created', workspace_update: 'Page updated', workspace_delete: 'Page deleted', flowchart_create: 'Flowchart created', flowchart_update: 'Flowchart updated', flowchart_delete: 'Flowchart deleted', community_note_create: 'Idea posted', community_note_delete: 'Idea removed', preferences_update: 'Settings updated', login: 'Signed in', register: 'Registered' };
+
   function loadRecent() {
-    fetch('/api/activity/recent', { credentials: 'same-origin' })
+    fetch('/api/activity/recent', { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
       .then(function(r) { return r.json(); })
       .then(function(data) {
         var items = data.items || [];
@@ -110,13 +173,14 @@
         if (items.length === 0) {
           tbody.innerHTML = '<tr><td colspan="3"><div class="empty-state"><p class="empty-state__title">No activity yet</p><p><a href="/tasks">Tasks</a> · <a href="/calendar">Calendar</a> · <a href="/reports">Reports</a></p></div></td></tr>';
         } else {
-          tbody.innerHTML = items.slice(0, 15).map(function(r) {
+          tbody.innerHTML = items.slice(0, 20).map(function(r) {
             var label = actionLabels[r.action] || r.action.replace(/_/g, ' ');
             var resource = (r.resource_type || '') + (r.resource_id ? ' #' + String(r.resource_id).slice(0, 8) : '');
-            var when = r.created_at ? new Date(r.created_at).toLocaleDateString(undefined, { dateStyle: 'short', timeStyle: 'short' }) : '—';
-            return '<tr><td class="cell-primary">' + (label || '—') + '</td><td>' + (resource || '—') + '</td><td>' + when + '</td></tr>';
+            var when = r.created_at ? new Date(r.created_at).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'medium' }) : '—';
+            return '<tr><td class="cell-primary">' + (label || '—') + '</td><td>' + (resource || '—') + '</td><td class="activity-when">' + when + '</td></tr>';
           }).join('');
         }
+        window._lastActivity = items;
       })
       .catch(function() {
         var tbody = document.getElementById('recent-tbody');
@@ -125,7 +189,7 @@
   }
 
   function loadWidgetEvents() {
-    fetch('/api/events')
+    fetch('/api/events', { credentials: 'same-origin' })
       .then(function(r) { return r.json(); })
       .then(function(d) {
         var now = new Date();
@@ -144,7 +208,7 @@
   }
 
   function loadWidgetTasks() {
-    fetch('/api/tasks')
+    fetch('/api/tasks', { credentials: 'same-origin' })
       .then(function(r) { return r.json(); })
       .then(function(d) {
         var tasks = (d.tasks || []).slice(0, 6);
@@ -158,9 +222,6 @@
             var row = cb.closest('.task-row');
             var id = row && row.getAttribute('data-id');
             if (!id) return;
-            var api = (typeof Aevel !== 'undefined' && Aevel.api) ? Aevel.api : function(method, path, body) {
-              return fetch(path, { method: method, credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) }).then(function(r) { return r.json().then(function(d) { if (!r.ok) throw new Error(d.error || 'Request failed'); return d; }); });
-            };
             api('PATCH', '/api/tasks/' + id, { done: cb.checked }).then(function() { loadWidgetTasks(); loadStats(); loadRecent(); }).catch(function() {});
           });
         });
@@ -191,14 +252,46 @@
     if (el) el.innerHTML = html;
   }
 
-  document.getElementById('widget-task-form').addEventListener('submit', function(e) {
+  function loadAIInsights() {
+    var content = document.getElementById('dashboard-ai-content');
+    if (!content) return Promise.resolve();
+    var stats = window._lastStats || {};
+    return fetch('/api/ai/dashboard/insights', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(stats)
+    }).then(function(r) { return r.json(); })
+      .then(function(d) {
+        content.innerHTML = '<p class="dashboard-ai-text">' + (d.insights || 'No insights generated.').replace(/</g, '&lt;').replace(/\n/g, '<br>') + '</p><span class="dashboard-ai-badge">AI-generated</span>';
+      })
+      .catch(function(err) {
+        content.innerHTML = '<p class="dashboard-ai-error">' + (err.message || 'Failed to load').replace(/</g, '&lt;') + '</p>';
+      });
+  }
+
+  function loadAIInsightsWrapper() {
+    loadStats().then(function(r) { return r.json(); }).then(function(stats) {
+      window._lastStats = stats;
+      loadAIInsights();
+    }).catch(function() {});
+  }
+
+  document.getElementById('dashboard-ai-refresh') && document.getElementById('dashboard-ai-refresh').addEventListener('click', function() {
+    var btn = this;
+    btn.disabled = true;
+    btn.textContent = 'Generating…';
+    fetch('/api/dashboard/stats', { credentials: 'same-origin' }).then(function(r) { return r.json(); })
+      .then(function(stats) { window._lastStats = stats; loadAIInsights(); })
+      .catch(function() { document.getElementById('dashboard-ai-content').innerHTML = '<p class="dashboard-ai-error">Load stats first.</p>'; })
+      .finally(function() { btn.disabled = false; btn.textContent = 'Generate'; });
+  });
+
+  document.getElementById('widget-task-form') && document.getElementById('widget-task-form').addEventListener('submit', function(e) {
     e.preventDefault();
     var input = document.getElementById('widget-task-input');
     var text = (input && input.value || '').trim();
     if (!text) return;
-    var api = (typeof Aevel !== 'undefined' && Aevel.api) ? Aevel.api : function(method, path, body) {
-      return fetch(path, { method: method, credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) }).then(function(r) { return r.json().then(function(d) { if (!r.ok) throw new Error(d.error || 'Request failed'); return d; }); });
-    };
     api('POST', '/api/tasks', { text: text }).then(function() {
       input.value = '';
       loadWidgetTasks();
@@ -213,6 +306,7 @@
   loadWidgetEvents();
   loadWidgetTasks();
   buildCalMini();
+  loadAIInsightsWrapper();
 })();
 </script>
 {% endblock %}

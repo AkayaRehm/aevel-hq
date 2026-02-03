@@ -156,6 +156,17 @@ def migrate_db():
             FOREIGN KEY (user_id) REFERENCES users(id)
         )
     """)
+    for col, ctype in [
+        ("time_start", "TEXT"),
+        ("time_end", "TEXT"),
+        ("notes", "TEXT"),
+        ("is_all_day", "INTEGER"),
+    ]:
+        try:
+            conn.execute(f"ALTER TABLE events ADD COLUMN {col} {ctype}")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
     conn.execute("""
         CREATE TABLE IF NOT EXISTS activity_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1235,14 +1246,33 @@ def api_notes_delete(nid):
 
 
 # — API: events (calendar)
+def _event_row_to_json(r):
+    out = {"id": r["id"], "date": r["date"], "title": r["title"]}
+    if "time_start" in r.keys():
+        out["time_start"] = (r["time_start"] or "").strip() or None
+    if "time_end" in r.keys():
+        out["time_end"] = (r["time_end"] or "").strip() or None
+    if "notes" in r.keys():
+        out["notes"] = (r["notes"] or "").strip() or None
+    if "is_all_day" in r.keys():
+        out["is_all_day"] = bool(r["is_all_day"])
+    return out
+
+
 @app.route("/api/events", methods=["GET"])
 @login_required
 def api_events_list():
     user_id = get_user_id()
     conn = get_db()
-    rows = conn.execute("SELECT id, date, title FROM events WHERE user_id = ? ORDER BY date", (user_id,)).fetchall()
+    try:
+        rows = conn.execute(
+            "SELECT id, date, title, time_start, time_end, notes, is_all_day FROM events WHERE user_id = ? ORDER BY date",
+            (user_id,),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        rows = conn.execute("SELECT id, date, title FROM events WHERE user_id = ? ORDER BY date", (user_id,)).fetchall()
     conn.close()
-    events = [{"id": r["id"], "date": r["date"], "title": r["title"]} for r in rows]
+    events = [_event_row_to_json(dict(r)) for r in rows]
     return jsonify({"events": events})
 
 
@@ -1256,12 +1286,30 @@ def api_events_create():
     if not date or not title:
         return jsonify({"error": "date and title required"}), 400
     event_id = str(uuid.uuid4())
+    time_start = (data.get("time_start") or "").strip() or None
+    time_end = (data.get("time_end") or "").strip() or None
+    notes = (data.get("notes") or "").strip() or None
+    is_all_day = 1 if data.get("is_all_day", True) else 0
     conn = get_db()
-    conn.execute("INSERT INTO events (id, user_id, date, title) VALUES (?, ?, ?, ?)", (event_id, user_id, date, title))
+    try:
+        conn.execute(
+            "INSERT INTO events (id, user_id, date, title, time_start, time_end, notes, is_all_day) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (event_id, user_id, date, title, time_start, time_end, notes, is_all_day),
+        )
+    except sqlite3.OperationalError:
+        conn.execute("INSERT INTO events (id, user_id, date, title) VALUES (?, ?, ?, ?)", (event_id, user_id, date, title))
     conn.commit()
     conn.close()
     log_activity(user_id, "event_create", "event", event_id)
-    return jsonify({"id": event_id, "date": date, "title": title}), 201
+    out = {"id": event_id, "date": date, "title": title}
+    if time_start is not None:
+        out["time_start"] = time_start
+    if time_end is not None:
+        out["time_end"] = time_end
+    if notes is not None:
+        out["notes"] = notes
+    out["is_all_day"] = bool(is_all_day)
+    return jsonify(out), 201
 
 
 @app.route("/api/events/<eid>", methods=["PATCH"])
@@ -1270,25 +1318,42 @@ def api_events_update(eid):
     user_id = get_user_id()
     data = request.get_json(silent=True) or {}
     conn = get_db()
-    row = conn.execute(
-        "SELECT id, date, title FROM events WHERE id = ? AND user_id = ?", (eid, user_id)
-    ).fetchone()
+    try:
+        row = conn.execute(
+            "SELECT id, date, title, time_start, time_end, notes, is_all_day FROM events WHERE id = ? AND user_id = ?",
+            (eid, user_id),
+        ).fetchone()
+    except sqlite3.OperationalError:
+        row = conn.execute("SELECT id, date, title FROM events WHERE id = ? AND user_id = ?", (eid, user_id)).fetchone()
     if not row:
         conn.close()
         return jsonify({"error": "not found"}), 404
+    row = dict(row)
     date = (data.get("date") or "").strip() if "date" in data else row["date"]
     title = (data.get("title") or "").strip() if "title" in data else row["title"]
     if not date or not title:
         conn.close()
         return jsonify({"error": "date and title required"}), 400
-    conn.execute(
-        "UPDATE events SET date = ?, title = ? WHERE id = ? AND user_id = ?",
-        (date, title, eid, user_id),
-    )
+    time_start = (data.get("time_start") or "").strip() or None if "time_start" in data else (row.get("time_start") or None)
+    time_end = (data.get("time_end") or "").strip() or None if "time_end" in data else (row.get("time_end") or None)
+    notes = (data.get("notes") or "").strip() or None if "notes" in data else (row.get("notes") or None)
+    is_all_day = (1 if data.get("is_all_day", True) else 0) if "is_all_day" in data else (1 if row.get("is_all_day", 1) else 0)
+    try:
+        conn.execute(
+            "UPDATE events SET date = ?, title = ?, time_start = ?, time_end = ?, notes = ?, is_all_day = ? WHERE id = ? AND user_id = ?",
+            (date, title, time_start, time_end, notes, is_all_day, eid, user_id),
+        )
+    except sqlite3.OperationalError:
+        conn.execute("UPDATE events SET date = ?, title = ? WHERE id = ? AND user_id = ?", (date, title, eid, user_id))
     conn.commit()
     log_activity(user_id, "event_update", "event", eid)
     conn.close()
-    return jsonify({"id": eid, "date": date, "title": title}), 200
+    out = {"id": eid, "date": date, "title": title}
+    out["time_start"] = time_start
+    out["time_end"] = time_end
+    out["notes"] = notes
+    out["is_all_day"] = bool(is_all_day)
+    return jsonify(out), 200
 
 
 @app.route("/api/events/<eid>", methods=["DELETE"])
@@ -1333,6 +1398,33 @@ def api_activity_recent():
             "created_at": r["created_at"],
         })
     return jsonify({"items": items})
+
+
+# — API: batch complete tasks
+@app.route("/api/tasks/batch-complete", methods=["POST"])
+@login_required
+def api_tasks_batch_complete():
+    user_id = get_user_id()
+    data = request.get_json(silent=True) or {}
+    ids = data.get("ids") or []
+    done = data.get("done", True)
+    if not isinstance(ids, list):
+        return jsonify({"error": "ids must be a list"}), 400
+    ids = [str(i).strip() for i in ids if i]
+    if not ids:
+        return jsonify({"ok": True, "updated": 0}), 200
+    conn = get_db()
+    placeholders = ",".join("?" * len(ids))
+    cur = conn.execute(
+        f"UPDATE tasks SET done = ? WHERE user_id = ? AND id IN ({placeholders})",
+        (1 if done else 0, user_id, *ids),
+    )
+    updated = cur.rowcount
+    conn.commit()
+    for tid in ids:
+        log_activity(user_id, "task_update", "task", tid, details={"batch_complete": done})
+    conn.close()
+    return jsonify({"ok": True, "updated": updated}), 200
 
 
 # — API: batch delete tasks
@@ -1390,6 +1482,152 @@ def api_notes_export():
     return Response(buf.getvalue(), mimetype="text/csv", headers={
         "Content-Disposition": "attachment; filename=aevel-reports.csv",
     })
+
+
+# — API: AI helpers (Gemini)
+@app.route("/api/ai/calendar/optimize", methods=["POST"])
+@login_required
+def api_ai_calendar_optimize():
+    user_id = get_user_id()
+    data = request.get_json(silent=True) or {}
+    events = data.get("events") or []
+    from tools import ai_service
+    suggestions, err = ai_service.optimize_schedule(events, user_id, log_activity)
+    if err:
+        return jsonify({"error": err}), 400
+    return jsonify({"suggestions": suggestions}), 200
+
+
+@app.route("/api/ai/calendar/summarize", methods=["POST"])
+@login_required
+def api_ai_calendar_summarize():
+    user_id = get_user_id()
+    data = request.get_json(silent=True) or {}
+    events = data.get("events") or []
+    scope = data.get("scope") or "week"
+    from tools import ai_service
+    text, err = ai_service.summarize_events(events, scope, user_id, log_activity)
+    if err:
+        return jsonify({"error": err}), 400
+    return jsonify({"summary": text}), 200
+
+
+@app.route("/api/ai/calendar/extract", methods=["POST"])
+@login_required
+def api_ai_calendar_extract():
+    user_id = get_user_id()
+    data = request.get_json(silent=True) or {}
+    text = (data.get("text") or "").strip()
+    if not text:
+        return jsonify({"error": "text required"}), 400
+    from tools import ai_service
+    events, err = ai_service.extract_events_from_text(text, user_id, log_activity)
+    if err:
+        return jsonify({"error": err}), 400
+    return jsonify({"events": events or []}), 200
+
+
+@app.route("/api/ai/tasks/break-down", methods=["POST"])
+@login_required
+def api_ai_tasks_break_down():
+    user_id = get_user_id()
+    data = request.get_json(silent=True) or {}
+    text = (data.get("text") or "").strip()
+    if not text:
+        return jsonify({"error": "text required"}), 400
+    from tools import ai_service
+    subtasks, err = ai_service.break_down_task(text, user_id, log_activity)
+    if err:
+        return jsonify({"error": err}), 400
+    return jsonify({"subtasks": subtasks or []}), 200
+
+
+@app.route("/api/ai/tasks/prioritize", methods=["POST"])
+@login_required
+def api_ai_tasks_prioritize():
+    user_id = get_user_id()
+    data = request.get_json(silent=True) or {}
+    tasks = data.get("tasks") or []
+    from tools import ai_service
+    result, err = ai_service.prioritize_tasks(tasks, user_id, log_activity)
+    if err:
+        return jsonify({"error": err}), 400
+    return jsonify({"order": result or []}), 200
+
+
+@app.route("/api/ai/tasks/estimate", methods=["POST"])
+@login_required
+def api_ai_tasks_estimate():
+    user_id = get_user_id()
+    data = request.get_json(silent=True) or {}
+    text = (data.get("text") or "").strip()
+    if not text:
+        return jsonify({"error": "text required"}), 400
+    from tools import ai_service
+    result, err = ai_service.estimate_effort(text, user_id, log_activity)
+    if err:
+        return jsonify({"error": err}), 400
+    return jsonify(result or {}), 200
+
+
+@app.route("/api/ai/dashboard/insights", methods=["POST"])
+@login_required
+def api_ai_dashboard_insights():
+    user_id = get_user_id()
+    stats = request.get_json(silent=True) or {}
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT action, created_at FROM activity_log WHERE user_id = ? ORDER BY created_at DESC LIMIT 20",
+        (user_id,),
+    ).fetchall()
+    conn.close()
+    activity_items = [{"action": r["action"], "created_at": r["created_at"]} for r in rows]
+    from tools import ai_service
+    text, err = ai_service.dashboard_insights(stats, activity_items, user_id, log_activity)
+    if err:
+        return jsonify({"error": err}), 400
+    return jsonify({"insights": text}), 200
+
+
+@app.route("/api/ai/analytics/explain", methods=["POST"])
+@login_required
+def api_ai_analytics_explain():
+    user_id = get_user_id()
+    data = request.get_json(silent=True) or {}
+    metric = (data.get("metric") or "").strip()
+    value = data.get("value", "")
+    context = (data.get("context") or "").strip()
+    if not metric:
+        return jsonify({"error": "metric required"}), 400
+    from tools import ai_service
+    text, err = ai_service.explain_metric(metric, value, context, user_id, log_activity)
+    if err:
+        return jsonify({"error": err}), 400
+    return jsonify({"explanation": text}), 200
+
+
+@app.route("/api/ai/analytics/summarize", methods=["POST"])
+@login_required
+def api_ai_analytics_summarize():
+    user_id = get_user_id()
+    data = request.get_json(silent=True) or {}
+    from tools import ai_service
+    text, err = ai_service.summarize_campaign(data, user_id, log_activity)
+    if err:
+        return jsonify({"error": err}), 400
+    return jsonify({"summary": text}), 200
+
+
+@app.route("/api/ai/analytics/suggest", methods=["POST"])
+@login_required
+def api_ai_analytics_suggest():
+    user_id = get_user_id()
+    data = request.get_json(silent=True) or {}
+    from tools import ai_service
+    suggestions, err = ai_service.suggest_optimizations(data, user_id, log_activity)
+    if err:
+        return jsonify({"error": err}), 400
+    return jsonify({"suggestions": suggestions or []}), 200
 
 
 # — API: AI query (routing/formatting only)

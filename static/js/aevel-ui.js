@@ -28,6 +28,24 @@
       }, 3200);
     },
 
+    undoToast: function(message, onUndo) {
+      var el = document.createElement('div');
+      el.className = 'toast toast--success toast-undo';
+      el.innerHTML = '<span class="toast-undo-msg">' + (message.replace(/</g, '&lt;')) + '</span> <button type="button" class="btn btn-small btn-ghost toast-undo-btn">Undo</button>';
+      getToastContainer().appendChild(el);
+      requestAnimationFrame(function() { el.classList.add('toast--visible'); });
+      var t = setTimeout(function() {
+        el.classList.remove('toast--visible');
+        setTimeout(function() { el.remove(); }, 300);
+      }, 5000);
+      el.querySelector('.toast-undo-btn').addEventListener('click', function() {
+        clearTimeout(t);
+        if (typeof onUndo === 'function') onUndo();
+        el.classList.remove('toast--visible');
+        setTimeout(function() { el.remove(); }, 300);
+      });
+    },
+
     confirm: function(options, onConfirm, onCancel) {
       var title = options.title || 'Confirm';
       var body = options.body || 'Are you sure?';

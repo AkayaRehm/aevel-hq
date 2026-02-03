@@ -24,8 +24,13 @@
       <button type="button" id="task-batch-delete" class="btn btn-small btn-danger">Delete selected</button>
       <button type="button" id="task-batch-cancel" class="btn btn-small btn-ghost">Cancel</button>
     </div>
+    <div class="task-ai-bar" style="margin-bottom: 0.75rem;">
+      <button type="button" id="task-prioritize" class="btn btn-small btn-secondary">Prioritize tasks</button>
+    </div>
     <div id="task-list-container">
-      <div class="task-list-skeleton" id="task-list-skeleton"></div>
+      <div class="task-list-skeleton" id="task-list-skeleton">
+        <div class="task-group"><div class="skeleton" style="height:1.25rem;width:80px;margin-bottom:0.5rem;"></div><ul><li class="task-item"><div class="skeleton" style="height:1rem;flex:1;"></div></li><li class="task-item"><div class="skeleton" style="height:1rem;flex:1;"></div></li><li class="task-item"><div class="skeleton" style="height:1rem;flex:1;"></div></li></ul></div>
+      </div>
       <div id="task-groups"></div>
     </div>
   </div>
