@@ -253,7 +253,56 @@ def notes_page():
 @app.route("/ai", methods=["GET"])
 @login_required
 def ai_page():
-    return render_template("ai.html")
+    return redirect(url_for("integrations_page"))
+
+
+@app.route("/analytics", methods=["GET"])
+@login_required
+def analytics_page():
+    return render_template("analytics.html")
+
+
+@app.route("/reports", methods=["GET"])
+@login_required
+def reports_page():
+    return render_template("reports.html")
+
+
+@app.route("/automations", methods=["GET"])
+@login_required
+def automations_page():
+    return render_template("automations.html")
+
+
+@app.route("/integrations", methods=["GET"])
+@login_required
+def integrations_page():
+    return render_template("integrations.html")
+
+
+@app.route("/settings", methods=["GET"])
+@login_required
+def settings_page():
+    return render_template("settings.html")
+
+
+# — API: dashboard stats
+@app.route("/api/dashboard/stats", methods=["GET"])
+@login_required
+def api_dashboard_stats():
+    user_id = get_user_id()
+    conn = get_db()
+    tasks = conn.execute("SELECT COUNT(*) as c FROM tasks WHERE user_id = ?", (user_id,)).fetchone()["c"]
+    tasks_done = conn.execute("SELECT COUNT(*) as c FROM tasks WHERE user_id = ? AND done = 1", (user_id,)).fetchone()["c"]
+    notes = conn.execute("SELECT COUNT(*) as c FROM notes WHERE user_id = ?", (user_id,)).fetchone()["c"]
+    events = conn.execute("SELECT COUNT(*) as c FROM events WHERE user_id = ?", (user_id,)).fetchone()["c"]
+    conn.close()
+    return jsonify({
+        "tasks_total": tasks,
+        "tasks_done": tasks_done,
+        "notes_count": notes,
+        "events_count": events,
+    })
 
 
 # — API: tasks

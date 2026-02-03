@@ -1,60 +1,230 @@
-{% extends "base.html" %}
+{% extends "base_aevel.html" %}
 {% block title %}Dashboard{% endblock %}
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+{% endblock %}
 {% block content %}
-<section class="page-head">
+<div class="page-header">
   <h1>Dashboard</h1>
-  <p class="muted">Overview and controls</p>
-</section>
-<section class="card dashboard-card">
-  <h2>AI</h2>
-  <p class="muted">AI features are used only in the <a href="{{ url_for('ai_page') }}">AI</a> section. Use the toggle above to enable or disable AI site-wide.</p>
-  <div class="toggle-inline">
-    <label class="toggle-wrap">
-      <span class="toggle-label">AI features</span>
-      <input type="checkbox" id="ai-toggle-page" class="toggle-input" checked>
-      <span class="toggle-slider"></span>
-    </label>
+  <p class="subtitle">Overview of your data and activity</p>
+</div>
+
+<section class="section">
+  <h2 class="section-title">Key metrics</h2>
+  <div class="grid grid-4" id="kpi-grid">
+    <div class="card">
+      <div class="card-title">Active tasks</div>
+      <div class="card-value" id="kpi-tasks">—</div>
+      <div class="card-meta" id="kpi-tasks-meta">—</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Completed</div>
+      <div class="card-value" id="kpi-done">—</div>
+      <div class="card-meta">Tasks done</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Reports</div>
+      <div class="card-value" id="kpi-notes">—</div>
+      <div class="card-meta">Notes & memos</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Scheduled</div>
+      <div class="card-value" id="kpi-events">—</div>
+      <div class="card-meta">Calendar events</div>
+    </div>
   </div>
 </section>
-<section class="card links-card">
-  <h2>Quick links</h2>
-  <ul class="link-list">
-    <li><a href="{{ url_for('calendar_page') }}">Calendar</a> — View and add events</li>
-    <li><a href="{{ url_for('tasks_page') }}">Tasks</a> — Manage your tasks</li>
-    <li><a href="{{ url_for('notes_page') }}">Notes</a> — Notes and memos</li>
-    <li><a href="{{ url_for('ai_page') }}">AI</a> — Dedicated AI area (routing and formatting only)</li>
-  </ul>
+
+<section class="section">
+  <h2 class="section-title">Volume & trends</h2>
+  <div class="card chart-panel">
+    <div class="card-title">Activity over time</div>
+    <canvas id="chart-activity" height="240"></canvas>
+  </div>
 </section>
-<section class="card status-card">
-  <h2>System</h2>
-  <p class="muted">API health</p>
-  <div id="health-status" class="status-pill">Checking…</div>
+
+<section class="section">
+  <h2 class="section-title">Recent activity</h2>
+  <div class="card">
+    <div class="table-wrap">
+      <table class="table" id="recent-table">
+        <thead>
+          <tr>
+            <th>Type</th>
+            <th>Description</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="recent-tbody">
+          <tr><td colspan="3" class="cell-primary">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <h2 class="section-title">Calendar & tasks</h2>
+  <div class="dashboard-widgets">
+    <div class="widget widget-calendar">
+      <div class="widget-title">This month</div>
+      <div class="cal-mini" id="cal-mini"></div>
+      <ul class="events-list" id="widget-events" style="margin-top: 1rem;"></ul>
+    </div>
+    <div class="widget widget-tasks">
+      <div class="widget-title">Tasks</div>
+      <div id="widget-tasks-list"></div>
+      <form class="form-inline" id="widget-task-form" style="margin-top: 0.75rem;">
+        <input type="text" class="input" id="widget-task-input" placeholder="Add task…" style="flex: 1; margin-bottom: 0;">
+        <button type="submit" class="btn btn-primary btn-small">Add</button>
+      </form>
+    </div>
+  </div>
 </section>
 {% endblock %}
 {% block scripts %}
 <script>
-  (function() {
-    var togglePage = document.getElementById('ai-toggle-page');
-    var toggleNav = document.getElementById('ai-toggle');
-    if (togglePage && toggleNav) {
-      Dashboard.syncToggleFromStorage(togglePage);
-      Dashboard.syncToggleFromStorage(toggleNav);
-      togglePage.addEventListener('change', function() {
-        Dashboard.setAIToggle(togglePage.checked);
-        toggleNav.checked = togglePage.checked;
-      });
-    }
-    fetch('{{ url_for("health") }}')
+(function() {
+  var ctx = document.getElementById('chart-activity');
+  if (ctx) {
+    new Chart(ctx.getContext('2d'), {
+      type: 'line',
+      data: {
+        labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+        datasets: [{
+          label: 'Tasks',
+          data: [12, 19, 8, 14, 11, 9, 7],
+          borderColor: '#D1D5DB',
+          backgroundColor: 'rgba(209, 213, 219, 0.06)',
+          fill: true,
+          tension: 0.3,
+          borderWidth: 1.5
+        }, {
+          label: 'Events',
+          data: [4, 6, 5, 7, 3, 2, 4],
+          borderColor: '#9CA3AF',
+          backgroundColor: 'rgba(156, 163, 175, 0.06)',
+          fill: true,
+          tension: 0.3,
+          borderWidth: 1.5
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { labels: { color: '#9CA3AF', font: { size: 12 } } } },
+        scales: {
+          x: { grid: { color: '#252830' }, ticks: { color: '#6B7280', maxTicksLimit: 7 } },
+          y: { grid: { color: '#252830' }, ticks: { color: '#6B7280' } }
+        }
+      }
+    });
+  }
+
+  function loadStats() {
+    fetch('/api/dashboard/stats')
       .then(function(r) { return r.json(); })
       .then(function(d) {
-        var el = document.getElementById('health-status');
-        if (el) el.textContent = d.status === 'ok' ? 'OK' : 'Error';
-        if (el) el.className = 'status-pill ' + (d.status === 'ok' ? 'status-ok' : 'status-err');
-      })
-      .catch(function() {
-        var el = document.getElementById('health-status');
-        if (el) { el.textContent = 'Error'; el.className = 'status-pill status-err'; }
+        var el = document.getElementById('kpi-tasks');
+        if (el) el.textContent = (d.tasks_total || 0) - (d.tasks_done || 0);
+        el = document.getElementById('kpi-tasks-meta');
+        if (el) el.textContent = (d.tasks_total || 0) + ' total';
+        el = document.getElementById('kpi-done');
+        if (el) el.textContent = d.tasks_done || 0;
+        el = document.getElementById('kpi-notes');
+        if (el) el.textContent = d.notes_count || 0;
+        el = document.getElementById('kpi-events');
+        if (el) el.textContent = d.events_count || 0;
       });
-  })();
+  }
+
+  function loadRecent() {
+    Promise.all([fetch('/api/tasks').then(function(r) { return r.json(); }), fetch('/api/notes').then(function(r) { return r.json(); })])
+      .then(function(arr) {
+        var tasks = (arr[0].tasks || []).slice(0, 5);
+        var notes = (arr[1].notes || []).slice(0, 5);
+        var rows = [];
+        tasks.forEach(function(t) { rows.push({ type: 'Task', desc: t.text, status: t.done ? 'Done' : 'Active' }); });
+        notes.forEach(function(n) { rows.push({ type: 'Note', desc: n.title, status: '—' }); });
+        rows.sort(function() { return Math.random() - 0.5; });
+        rows = rows.slice(0, 8);
+        var tbody = document.getElementById('recent-tbody');
+        if (!tbody) return;
+        tbody.innerHTML = rows.length ? rows.map(function(r) {
+          return '<tr><td class="cell-primary">' + r.type + '</td><td>' + (r.desc || '').substring(0, 50) + '</td><td>' + r.status + '</td></tr>';
+        }).join('') : '<tr><td colspan="3" class="cell-primary">No recent activity</td></tr>';
+      });
+  }
+
+  function loadWidgetEvents() {
+    fetch('/api/events')
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        var events = (d.events || []).filter(function(e) {
+          var m = new Date().getMonth() + 1;
+          var y = new Date().getFullYear();
+          return e.date && e.date.startsWith(y + '-' + (m < 10 ? '0' : '') + m);
+        }).slice(0, 5);
+        var el = document.getElementById('widget-events');
+        if (el) el.innerHTML = events.length ? events.map(function(e) { return '<li><span class="date">' + (e.date || '') + '</span><span class="title">' + (e.title || '') + '</span></li>'; }).join('') : '<li class="title">No events this month</li>';
+      });
+  }
+
+  function loadWidgetTasks() {
+    fetch('/api/tasks')
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        var tasks = (d.tasks || []).slice(0, 6);
+        var el = document.getElementById('widget-tasks-list');
+        if (!el) return;
+        el.innerHTML = tasks.length ? tasks.map(function(t) {
+          return '<div class="task-row ' + (t.done ? 'done' : '') + '" data-id="' + t.id + '"><input type="checkbox" ' + (t.done ? 'checked' : '') + '><span class="task-label">' + (t.text || '').replace(/</g, '&lt;') + '</span></div>';
+        }).join('') : '<div class="empty">No tasks</div>';
+        el.querySelectorAll('input[type=checkbox]').forEach(function(cb) {
+          cb.addEventListener('change', function() {
+            var id = cb.closest('.task-row').getAttribute('data-id');
+            if (!id) return;
+            var done = cb.checked;
+            fetch('/api/tasks/' + id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ done: done }) }).then(function() { loadWidgetTasks(); loadStats(); });
+          });
+        });
+      });
+  }
+
+  function buildCalMini() {
+    var now = new Date();
+    var y = now.getFullYear();
+    var m = now.getMonth();
+    var first = new Date(y, m, 1);
+    var last = new Date(y, m + 1, 0);
+    var startDay = first.getDay();
+    var days = last.getDate();
+    var w = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+    var html = w.map(function(d) { return '<div class="day head">' + d + '</div>'; }).join('');
+    for (var i = 0; i < startDay; i++) html += '<div class="day"></div>';
+    for (var d = 1; d <= days; d++) {
+      var cls = 'day';
+      if (d === now.getDate() && m === now.getMonth()) cls += ' today';
+      html += '<div class="' + cls + '">' + d + '</div>';
+    }
+    var el = document.getElementById('cal-mini');
+    if (el) el.innerHTML = html;
+  }
+
+  document.getElementById('widget-task-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    var input = document.getElementById('widget-task-input');
+    var text = (input.value || '').trim();
+    if (!text) return;
+    fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: text }) })
+      .then(function() { input.value = ''; loadWidgetTasks(); loadStats(); loadRecent(); });
+  });
+
+  loadStats();
+  loadRecent();
+  loadWidgetEvents();
+  loadWidgetTasks();
+  buildCalMini();
+})();
 </script>
 {% endblock %}
