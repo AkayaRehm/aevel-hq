@@ -281,6 +281,16 @@ body {
 .task-item input[type="checkbox"] { accent-color: var(--accent); cursor: pointer; }
 .tasks-card .form-inline { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
 .tasks-card .form-inline .input { flex: 1; margin-bottom: 0; }
+.task-form-add { display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap; align-items: center; }
+.task-form-add #task-input { flex: 1; min-width: 140px; margin-bottom: 0; }
+.task-form-add .input-sm { width: 140px; max-width: 100%; margin-bottom: 0; }
+.task-form-add select.input-sm { width: auto; }
+.task-item .task-body { flex: 1; min-width: 0; }
+.task-meta-row { margin-top: 0.35rem; display: flex; flex-wrap: wrap; gap: 0.5rem; font-size: 0.75rem; color: var(--text-tertiary); }
+.task-meta { display: inline-block; }
+.task-assignee { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-urgency-high { color: var(--danger); }
+.task-urgency-low { color: var(--text-tertiary); }
 
 /* Full notes page */
 .notes-list { list-style: none; padding: 0; margin: 0; }

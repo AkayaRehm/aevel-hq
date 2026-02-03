@@ -70,7 +70,7 @@ Render should auto-detect settings from `render.yaml`, but verify:
 Click **Environment** tab and add:
 
 ### Recommended (login + admin + email):
-- **SECRET_KEY** — Render can auto-generate this; or use a long random string for session security.
+- **SECRET_KEY** — Keep your existing one (needed for sessions). Don’t add a duplicate.
 - **ADMIN_PASSWORD** — Password to access `/admin` (control which emails are sent and to whom).
 - **ZOHO_EMAIL** — `hello.aevel@zohomail.com` (sender address).
 - **ZOHO_PASSWORD** — Your Zoho Mail password (or app password if 2FA is on).
